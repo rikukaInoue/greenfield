@@ -188,6 +188,12 @@ depends = ["web:install"]
 dir = "frontend"
 run = ["pnpm --filter @greenfield/photo-api gen:check", "pnpm typecheck", "pnpm build"]
 
+[tasks."web:e2e"]
+description = "ブラウザ E2E（Playwright）。photo と SSR(:3000) は未起動なら自動で立てる"
+depends = ["web:install"]
+dir = "frontend"
+run = "pnpm --filter @greenfield/web test:e2e"
+
 [tasks.scaffold]
 description = "新サービスの骨格を生成: mise run scaffold <name>"
 run = "go run ./dev/scaffold new-service"

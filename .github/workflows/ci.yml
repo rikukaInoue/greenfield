@@ -102,3 +102,18 @@ jobs:
 
       - name: フロントエンド（生成型の一致 / typecheck / build）
         run: mise run --quiet web:check
+
+      - name: Playwright のブラウザを用意する
+        working-directory: frontend/apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: ブラウザ E2E（投稿の3段 / #17 トークン非露出・CORS 閉）
+        run: mise run --quiet web:e2e
+
+      - name: E2E のトレースを保存する
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: frontend/apps/web/test-results/
+          retention-days: 7
