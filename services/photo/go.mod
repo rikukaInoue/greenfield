@@ -1,0 +1,9 @@
+module github.com/rikukaInoue/greenfield/services/photo
+
+go 1.26
+
+require github.com/rikukaInoue/greenfield/core v0.0.0
+
+// モジュール間の依存はタグではなくreplaceで結ぶ（リポジトリ外から消費されるまでタグは打たない）。
+// 他サービスへの依存は <name>-client のみ許可。実装モジュールをここに書いてはならない。
+replace github.com/rikukaInoue/greenfield/core => ../../core

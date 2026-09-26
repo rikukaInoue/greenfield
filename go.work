@@ -1,0 +1,9 @@
+go 1.26
+
+use (
+	./core
+	./dev
+	./services/photo
+	./services/photo-client
+	// scaffold:use
+)
