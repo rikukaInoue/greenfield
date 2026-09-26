@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -58,7 +59,29 @@ func run(ctx context.Context) error {
 		default:
 			return fmt.Errorf("create bucket %s: %w", b, err)
 		}
+		if err := putCORS(ctx, client, b); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// putCORS はフロントエンドのオリジンから署名付きURLへ直接 PUT / GET できるようにする。
+func putCORS(ctx context.Context, client *s3.Client, bucket string) error {
+	origins := strings.Split(envOr("FRONTEND_ORIGINS", "http://localhost:5173,http://localhost:3000"), ",")
+	_, err := client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket: aws.String(bucket),
+		CORSConfiguration: &types.CORSConfiguration{CORSRules: []types.CORSRule{{
+			AllowedOrigins: origins,
+			AllowedMethods: []string{"PUT", "GET"},
+			AllowedHeaders: []string{"*"},
+			MaxAgeSeconds:  aws.Int32(600),
+		}}},
+	})
+	if err != nil {
+		return fmt.Errorf("put cors %s: %w", bucket, err)
+	}
+	fmt.Printf("bucket %s cors: %s\n", bucket, strings.Join(origins, ", "))
 	return nil
 }
 

@@ -429,3 +429,22 @@ RustFS は S3 プロトコルの実装そのものなので、拒否経路がロ
 - [ ] internal-08: 「入口で1回評価」の実装形（サービスが名前 + 既定値を宣言し、ミドルウェアがまとめて評価）を追記
 - [ ] internal-07: CI の `services:` では `command` が使えないため、定義ファイルを要する依存
       （flagd 等）は compose と同じ形で立てられない。テストは既定値側で通す設計にしておく
+
+### 追記: AWS でのフラグ基盤（Phase 7 の方針）
+
+`go-sdk-contrib/providers` を確認したところ、AWS AppConfig 用の OpenFeature プロバイダは**存在しない**
+（AWS 系は `aws-ssm` = Parameter Store だけ。実際の一覧: aws-ssm / configcat / flagd / flagd-in-process /
+flagsmith / flipt / from-env / gcp / go-feature-flag / harness / launchdarkly / multi-provider / ofrep /
+optimizely / prefab / rocketflag / statsig / unleash）。
+
+AppConfig を採る方針にしたため、プロバイダは自作する（[ADR 0011](adr/0011-flag-provider-on-aws.md)、Issue #79）。
+flagd を S3 sync で動かす選択肢もあったが、AppConfig の段階デプロイ（割合 + ベイク時間 +
+CloudWatch アラームでの自動ロールバック）が規約の展開手順とそのまま噛み合うためそちらを採った。
+
+あわせて判明した flagd の制約:
+
+- flagd の `--uri` は filepath / HTTP / gRPC / Kubernetes CR / **GCS / Azure Blob / S3** を取れる。
+  AppConfig は非対応
+- イメージは distroless でシェルも curl も持たないため、**コンテナ内の healthcheck を書けない**。
+  当初 `/flagd-build --version` を指定していて常に unhealthy になっていた。healthcheck を外し、
+  到達性はアプリ側が既定値へ倒れる形で吸収する

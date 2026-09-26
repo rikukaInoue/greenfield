@@ -68,11 +68,8 @@ services:
       - "8013:8013"
     volumes:
       - ./flagd:/etc/flagd:ro
-    healthcheck:
-      test: ["CMD", "/flagd-build", "--version"]
-      interval: 3s
-      timeout: 5s
-      retries: 20
+    # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。
+    # 到達性は依存する側（アプリ）が既定値へ倒れる形で吸収する。
 
 volumes:
   mysql-data:
