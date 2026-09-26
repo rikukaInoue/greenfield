@@ -10,14 +10,14 @@ import (
 func fixture(t *testing.T, queries string) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "db", "queries"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "db", "queries", "readmodel"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	schema := "CREATE TABLE `photos` (`id` bigint, `gear_item_id` bigint);\nCREATE TABLE `outbox` (`id` bigint);\n"
 	if err := os.WriteFile(filepath.Join(dir, "db", "schema.sql"), []byte(schema), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "db", "queries", "q.sql"), []byte(queries), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "db", "queries", "readmodel", "q.sql"), []byte(queries), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir

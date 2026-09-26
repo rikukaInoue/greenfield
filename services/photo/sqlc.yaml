@@ -1,15 +1,24 @@
 # sqlc の入力は自ドメインのスキーマ（db/schema.sql = マイグレーション全適用後の dump）とクエリ（db/queries）のみ。
 # 他ドメインのテーブルを参照するクエリはここで生成に失敗する（conventions/internal-01 の第三層）。
-# 生成型は repository/internal/ に閉じ、Go の internal 規則で repository/ の外から import できない。
+# 生成型は各層の internal/ に閉じ、Go の internal 規則でその層の外から import できない。
+# コマンド側（repository）と読み側（readmodel）で入力クエリと出力先を分け、CQS をファイル境界に出す。
 version: "2"
 sql:
   - engine: "mysql"
     schema: "db/schema.sql"
-    queries: "db/queries"
+    queries: "db/queries/repository"
     gen:
       go:
         package: "sqlcgen"
         out: "repository/internal/sqlcgen"
-        emit_methods_with_db_argument: false
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+  - engine: "mysql"
+    schema: "db/schema.sql"
+    queries: "db/queries/readmodel"
+    gen:
+      go:
+        package: "sqlcgen"
+        out: "readmodel/internal/sqlcgen"
         emit_empty_slices: true
         emit_pointers_for_null_types: true

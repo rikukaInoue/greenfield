@@ -2,6 +2,7 @@
 [tools]
 go = "1.26.6"
 sqlc = "1.31.1"
+"ubi:oasdiff/oasdiff" = "1.32.1"
 
 [env]
 COMPOSE_FILE = "deploy/compose/compose.yaml"
@@ -42,7 +43,7 @@ run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exi
 
 [tasks.check]
 description = "fmt + build + vet + test + lint:queries をまとめて（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "sqlc:check"]
+depends = ["fmt", "build", "vet", "test", "lint:queries", "sqlc:check", "api:check"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -68,6 +69,20 @@ run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $
 description = "db/schema.sql がマイグレーションと一致しているか検証（CI）"
 depends = ["db:up"]
 run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $s) --check || exit 1; done'
+
+# --- API 契約（huma → OpenAPI → oasdiff） ---
+
+[tasks.api]
+description = "huma の型から api/<service>/<listener>.openapi.json を生成（api/ は手書きしない）"
+run = "go run ./dev/genapi"
+
+[tasks."api:check"]
+description = "api/ の生成物がコードと一致しているか検証（CI）"
+run = "go run ./dev/genapi -check"
+
+[tasks."api:breaking"]
+description = "base（既定 origin/main）に対する破壊的変更を検出し、メジャー未更新なら失敗（CI）"
+run = "dev/scripts/api-breaking.sh"
 
 [tasks."lint:queries"]
 description = "クエリが自ドメインのテーブルだけを参照しているか検証（許可リスト = db/schema.sql）"

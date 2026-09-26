@@ -5,14 +5,21 @@
 // app/ から配線できなくなるため（規約 internal-01 の handler/internal/ からの意図的な逸脱）。
 package internalapi
 
-import "net/http"
+import (
+	"github.com/rikukaInoue/greenfield/core/httpapi"
+)
 
-// New は internal リスナーのルートハンドラを返す。
-func New() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("ok\n"))
-	})
-	return mux
+// Register は internal リスナーのルートを登録する。
+// コマンドはユースケース単位（:verb / 名詞サブリソース）、クエリは Read Model 単位の GET とし、
+// OperationID は対応する usecase 名に一致させる（生成クライアントのメソッド名になる）。
+//
+//	huma.Register(api.Huma, huma.Operation{
+//		OperationID: "CreateThing",
+//		Method:      http.MethodPost,
+//		Path:        "/things",
+//		Summary:     "…",
+//		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
+//	}, createThing)
+func Register(api httpapi.API) {
+	_ = api // ルートを登録するまでは何もしない
 }
