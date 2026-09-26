@@ -11,6 +11,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -60,7 +61,14 @@ func lint(dir string) ([]string, error) {
 	for _, m := range createTable.FindAllStringSubmatch(string(schema), -1) {
 		allowed[strings.ToLower(m[1])] = true
 	}
-	files, err := filepath.Glob(filepath.Join(dir, "db", "queries", "*.sql"))
+	// db/queries/ 配下を再帰的に（repository/ と readmodel/ に分かれている）
+	var files []string
+	err = filepath.WalkDir(filepath.Join(dir, "db", "queries"), func(p string, e fs.DirEntry, err error) error {
+		if err == nil && !e.IsDir() && strings.HasSuffix(p, ".sql") {
+			files = append(files, p)
+		}
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

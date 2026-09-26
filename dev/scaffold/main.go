@@ -108,6 +108,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LO
 `, name)); err != nil {
 		return err
 	}
+	if err := insertBefore(filepath.Join(root, "dev", "genapi", "main.go"), "		// scaffold:specs",
+		fmt.Sprintf("\t\t%q: %s.APIs(),\n", name, d.Pkg)); err != nil {
+		return err
+	}
+	if err := insertBefore(filepath.Join(root, "dev", "genapi", "main.go"), "	// scaffold:genapi-imports",
+		fmt.Sprintf("\t%s \"%s/app\"\n", d.Pkg, d.Module)); err != nil {
+		return err
+	}
 	// 生成モジュールの go.sum を作る（依存は photo と同じ固定版。モジュールキャッシュにあればオフラインで済む）
 	tidy := exec.Command("go", "mod", "tidy")
 	tidy.Dir = filepath.Join(root, "services", name)

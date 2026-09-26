@@ -8,7 +8,6 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
-	"strings"
 )
 
 const createPhoto = `-- name: CreatePhoto :execresult
@@ -24,7 +23,7 @@ type CreatePhotoParams struct {
 	GearItemID   sql.NullInt64
 }
 
-// 参照できるのは自ドメイン（photo）のテーブルのみ。他ドメインは <name>-client 経由の HTTP か ReplicaView で取得する。
+// コマンド側（Entity の復元・保存）のクエリ。参照できるのは自ドメイン（photo）のテーブルのみ。
 func (q *Queries) CreatePhoto(ctx context.Context, arg CreatePhotoParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createPhoto,
 		arg.OwnerSubject,
@@ -34,12 +33,12 @@ func (q *Queries) CreatePhoto(ctx context.Context, arg CreatePhotoParams) (sql.R
 	)
 }
 
-const getPhoto = `-- name: GetPhoto :one
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at FROM photos WHERE id = ?
+const getPhotoForUpdate = `-- name: GetPhotoForUpdate :one
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at FROM photos WHERE id = ? FOR UPDATE
 `
 
-func (q *Queries) GetPhoto(ctx context.Context, id uint64) (Photo, error) {
-	row := q.db.QueryRowContext(ctx, getPhoto, id)
+func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, error) {
+	row := q.db.QueryRowContext(ctx, getPhotoForUpdate, id)
 	var i Photo
 	err := row.Scan(
 		&i.ID,
@@ -51,90 +50,4 @@ func (q *Queries) GetPhoto(ctx context.Context, id uint64) (Photo, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const listPhotosByIDs = `-- name: ListPhotosByIDs :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at FROM photos WHERE id IN (/*SLICE:ids*/?) ORDER BY created_at DESC
-`
-
-// 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る
-func (q *Queries) ListPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, error) {
-	query := listPhotosByIDs
-	var queryParams []interface{}
-	if len(ids) > 0 {
-		for _, v := range ids {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
-	}
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Photo{}
-	for rows.Next() {
-		var i Photo
-		if err := rows.Scan(
-			&i.ID,
-			&i.OwnerSubject,
-			&i.Caption,
-			&i.Visibility,
-			&i.GearItemID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPhotosByOwner = `-- name: ListPhotosByOwner :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at FROM photos WHERE owner_subject = ? ORDER BY created_at DESC LIMIT ?
-`
-
-type ListPhotosByOwnerParams struct {
-	OwnerSubject string
-	Limit        int32
-}
-
-func (q *Queries) ListPhotosByOwner(ctx context.Context, arg ListPhotosByOwnerParams) ([]Photo, error) {
-	rows, err := q.db.QueryContext(ctx, listPhotosByOwner, arg.OwnerSubject, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Photo{}
-	for rows.Next() {
-		var i Photo
-		if err := rows.Scan(
-			&i.ID,
-			&i.OwnerSubject,
-			&i.Caption,
-			&i.Visibility,
-			&i.GearItemID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

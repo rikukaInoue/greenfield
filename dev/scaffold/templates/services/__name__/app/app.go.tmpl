@@ -9,10 +9,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"{{.Module}}/handler/admin"
 	"{{.Module}}/handler/external"
 	"{{.Module}}/handler/internalapi"
 )
+
+// Version は OpenAPI の info.version。破壊的変更時のメジャー更新は oasdiff と連動させる
+// （conventions/api-design.md §3.4）。
+const Version = "1.0.0"
 
 // Config はリスナーの待ち受けアドレス。アプリが知るのはListenするポートだけであり、
 // TLS・ホスト名・到達制御はインフラの持ち物（conventions/internal-07）。
@@ -32,12 +37,34 @@ func ConfigFromEnv() Config {
 	}
 }
 
+// APIs はリスナー3系統の huma API を組み立てて返す。
+// OpenAPI の生成（dev/genapi）とサーバ起動で同じ組み立てを共有するため、Run から分けてある。
+func APIs() map[httpapi.Listener]httpapi.API {
+	opts := httpapi.Options{Service: "{{.Name}}", Version: Version}
+
+	ext := httpapi.New(httpapi.External, opts)
+	external.Register(ext)
+
+	adm := httpapi.New(httpapi.Admin, opts)
+	admin.Register(adm)
+
+	intl := httpapi.New(httpapi.Internal, opts)
+	internalapi.Register(intl)
+
+	return map[httpapi.Listener]httpapi.API{
+		httpapi.External: ext,
+		httpapi.Admin:    adm,
+		httpapi.Internal: intl,
+	}
+}
+
 // Run は3リスナーを起動し、ctxのキャンセルまたはいずれかのリスナーの失敗で全て停止する。
 func Run(ctx context.Context, cfg Config) error {
+	apis := APIs()
 	servers := []*http.Server{
-		{Addr: cfg.ExternalAddr, Handler: external.New()},
-		{Addr: cfg.InternalAddr, Handler: internalapi.New()},
-		{Addr: cfg.AdminAddr, Handler: admin.New()},
+		{Addr: cfg.ExternalAddr, Handler: apis[httpapi.External].Handler},
+		{Addr: cfg.InternalAddr, Handler: apis[httpapi.Internal].Handler},
+		{Addr: cfg.AdminAddr, Handler: apis[httpapi.Admin].Handler},
 	}
 
 	errc := make(chan error, len(servers))
