@@ -1,4 +1,5 @@
 import { imageContentTypes } from "@greenfield/photo-api";
+import { useEffect, useState } from "react";
 import { data, Form, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/photos.new";
 
@@ -45,6 +46,9 @@ export function meta() {
 
 export default function NewPhoto({ actionData }: Route.ComponentProps) {
   const submitting = useNavigation().state === "submitting";
+  // 投稿は clientAction でしか動かないため、ハイドレーション前の素のフォーム送信を防ぐ
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
   const field = "mt-1 w-full rounded border border-stone-300 bg-white px-3 py-2 dark:border-stone-700 dark:bg-stone-900";
   return (
     <div className="mx-auto max-w-lg">
@@ -68,7 +72,7 @@ export default function NewPhoto({ actionData }: Route.ComponentProps) {
         </fieldset>
         {actionData?.error && <p className="text-sm text-red-600">{actionData.error}</p>}
         <button
-          disabled={submitting}
+          disabled={!hydrated || submitting}
           className="rounded bg-stone-900 px-4 py-2 text-white disabled:opacity-50 dark:bg-stone-100 dark:text-stone-900"
         >
           {submitting ? "アップロード中…" : "投稿する"}
