@@ -214,6 +214,8 @@ export interface components {
             value?: unknown;
         };
         ListPhotosOutputBody: {
+            /** @description 主体が今この一覧へ写真を投稿できるか。投稿の一時停止中などは false */
+            can_create: boolean;
             /** @description 写真の一覧 */
             photos: components["schemas"]["Photo"][] | null;
         };

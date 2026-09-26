@@ -1,6 +1,3 @@
 packages:
   - apps/*
   - packages/*
-allowBuilds:
-  # postinstall はバージョン表示だけで、実行しなくてよい
-  protobufjs: false

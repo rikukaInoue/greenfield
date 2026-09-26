@@ -2,7 +2,6 @@ import { imageContentTypes } from "@greenfield/photo-api";
 import { useEffect, useState } from "react";
 import { data, Form, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/photos.new";
-import { flagsContext } from "../context";
 
 type Problem = { code?: string; detail?: string };
 
@@ -12,10 +11,6 @@ async function postForm<T>(url: string, body: Record<string, string>): Promise<T
   if (res.status === 401) throw redirect(`/login?${new URLSearchParams({ returnTo: "/photos/new" })}`);
   if (!res.ok) throw new Error((json as Problem).detail ?? `投稿に失敗しました（${res.status}）`);
   return json as T;
-}
-
-export function loader({ context }: Route.LoaderArgs) {
-  return { uploadsDisabled: context.get(flagsContext)["ops.photo_disable_uploads"] };
 }
 
 // clientAction は作成 → 署名URLへ直接 PUT → commit の3段で投稿する。画像は SSR を経由しない。
@@ -49,8 +44,7 @@ export function meta() {
   return [{ title: "投稿 | greenfield photos" }];
 }
 
-export default function NewPhoto({ loaderData, actionData }: Route.ComponentProps) {
-  const { uploadsDisabled } = loaderData;
+export default function NewPhoto({ actionData }: Route.ComponentProps) {
   const submitting = useNavigation().state === "submitting";
   // 投稿は clientAction でしか動かないため、ハイドレーション前の素のフォーム送信を防ぐ
   const [hydrated, setHydrated] = useState(false);
@@ -59,13 +53,7 @@ export default function NewPhoto({ loaderData, actionData }: Route.ComponentProp
   return (
     <div className="mx-auto max-w-lg">
       <h1 className="text-xl font-semibold">写真を投稿</h1>
-      {uploadsDisabled && (
-        <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
-          現在、投稿を一時停止しています。しばらくしてから再度お試しください。
-        </p>
-      )}
-      <Form method="post" encType="multipart/form-data" className="mt-6">
-        <fieldset disabled={uploadsDisabled} className="space-y-4 disabled:opacity-50">
+      <Form method="post" encType="multipart/form-data" className="mt-6 space-y-4">
         <label className="block">
           <span className="text-sm">画像</span>
           <input type="file" name="file" required accept={imageContentTypes.join(",")} className={field} />
@@ -89,7 +77,6 @@ export default function NewPhoto({ loaderData, actionData }: Route.ComponentProp
         >
           {submitting ? "アップロード中…" : "投稿する"}
         </button>
-        </fieldset>
       </Form>
     </div>
   );
