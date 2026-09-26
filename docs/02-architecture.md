@@ -19,6 +19,8 @@ photo ◀──(イベント: GearPublished / GearRenamed)── gear   表示�
 photo ──(イベント: PhotoPublished)──▶ gear             起きればよい → Eventual（gear側の作例カウント等）
 ```
 
+3本のうち Eventual を使うのはイベントの2本だけで、使用機材の紐付けは同期コマンドである（結果が今の分岐を決めるため非同期にできない）。`Eventual.Publish` は `Atomic.Do` の中で呼ぶ（outbox への記録が業務データと同一トランザクションで確定しないと到達保証が成立しないため。docs/adr/0012）。
+
 同期コマンドの具体形: 写真投稿時に使用機材を指定すると、photoは `GearLinkPending` としてAtomicで確定し、tx外で `POST /items/{id}:link-photo`（`Idempotency-Key` 付き）をgearへ発行し、結果を別のAtomicで `GearLinked` / `GearLinkRejected`（機材が非公開・存在しない等）へ反映する。gear停止中は pending のまま残り、回収ジョブが冪等キーで照会して確定させる（04 #11）。
 
 画像本体はDBに入れず、S3互換のオブジェクトストレージに置く。アプリはバイト列を通さず署名付きURLを発行するだけで、クライアントが直接 PUT する。オブジェクトストレージは外部システムなのでAtomicに載せられないため、「無害な側（オブジェクトだけ存在）」を先に作り、`pending_upload` → `:commit`（実体確認）→ `ready` の順で確定させる（docs/adr/0009）。放置された `pending_upload` は `photo reclaim` が回収する。

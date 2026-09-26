@@ -32,3 +32,4 @@
 | [0009](0009-presigned-upload.md) | 画像は署名付きURLでアップロードし pending → ready で確定する | 要 |
 | [0010](0010-feature-flag-evaluation.md) | フラグは入口で1回評価して ctx に積む | 要 |
 | [0011](0011-flag-provider-on-aws.md) | AWS では AppConfig 用の OpenFeature プロバイダを自作する | 要 |
+| [0012](0012-eventual-publish-inside-atomic.md) | `Eventual.Publish` は `Atomic.Do` の中で呼ぶ | 要 |

@@ -8,6 +8,8 @@ type Atomic interface {
 }
 
 // Eventual は結果整合の配送。最終的な到達を保証する（at-least-once）。
+// Publish は Atomic.Do の中で呼ぶ。outbox への記録が業務データと同一トランザクションで確定しないと
+// 到達保証が成立しない（docs/adr/0012-eventual-publish-inside-atomic.md）。
 type Eventual interface {
 	Publish(ctx context.Context, event Event) error
 }
