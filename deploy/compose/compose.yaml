@@ -1,0 +1,28 @@
+# ローカル一式（Tier 1: インフラのみコンテナ、Goアプリはホストプロセス）。
+# 認証(keycloak)・openfga・localstack・flagd・otel は各Phaseで追加する。
+name: greenfield
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: greenfield-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      # database・ユーザー・GRANT の作成はDBレベルの操作としてここ（platform運用相当）が持つ。
+      # サービスのマイグレーションには入れない（conventions/internal-05）。
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  mysql-data:

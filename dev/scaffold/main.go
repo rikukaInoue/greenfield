@@ -97,6 +97,25 @@ func run(args []string) error {
 			return fmt.Errorf("go %s: %w", strings.Join(a, " "), err)
 		}
 	}
+	if err := insertBefore(filepath.Join(root, "deploy", "compose", "mysql", "init", "01-databases.sql"), "-- scaffold:databases",
+		fmt.Sprintf(`-- %[1]s
+CREATE DATABASE IF NOT EXISTS %[1]s CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER IF NOT EXISTS '%[1]s_app'@'%%' IDENTIFIED BY '%[1]s_app';
+CREATE USER IF NOT EXISTS '%[1]s_migrate'@'%%' IDENTIFIED BY '%[1]s_migrate';
+GRANT SELECT, INSERT, UPDATE, DELETE ON %[1]s.* TO '%[1]s_app'@'%%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LOCK TABLES ON %[1]s.* TO '%[1]s_migrate'@'%%';
+
+`, name)); err != nil {
+		return err
+	}
+	// 生成モジュールの go.sum を作る（依存は photo と同じ固定版。モジュールキャッシュにあればオフラインで済む）
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = filepath.Join(root, "services", name)
+	tidy.Env = append(os.Environ(), "GOWORK=off")
+	tidy.Stderr = os.Stderr
+	if err := tidy.Run(); err != nil {
+		return fmt.Errorf("go mod tidy in services/%s: %w", name, err)
+	}
 	fmt.Printf("generated services/%s (ports %d/%d/%d) and services/%s-client\n", name, d.Base, d.Internal, d.Admin, name)
 	return nil
 }
