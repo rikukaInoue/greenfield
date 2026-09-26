@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同じブランチへの連続 push は最新だけ走らせる。
+# サービス単位の直列/並列制御（#26）は Phase 2.4 でデプロイ側に入れる。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # モジュール境界の検証はワークスペースを切ったビルドでしか効かない（docs/adr/0006）。
+  # Phase 2.1 でここを paths-filter によるモジュール単位のジョブへ分割する。
+  check:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      rustfs:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: test
+          RUSTFS_SECRET_KEY: testtest
+          RUSTFS_CONSOLE_ENABLE: "false"
+        ports:
+          - 9000:9000
+
+    env:
+      # compose ではなく services: のコンテナを使う。schema-dump.sh はホストの
+      # mysql / mysqldump で接続する（MYSQL_CONTAINER が空のとき）
+      MYSQL_CONTAINER: ""
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # api:breaking が base と比較するため履歴が要る
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: mysql クライアントを用意する
+        run: mysql --version || sudo apt-get install -y --no-install-recommends mysql-client
+
+      - name: database と GRANT を用意する
+        # compose の init スクリプトと同じものを流す。
+        # docker-entrypoint-initdb.d は services: では使えないため明示的に適用する。
+        run: |
+          for f in deploy/compose/mysql/init/*.sql; do
+            mysql -h 127.0.0.1 -uroot -proot < "$f"
+          done
+
+      - name: RustFS の起動を待つ
+        run: |
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:9000/ && exit 0
+            sleep 2
+          done
+          echo "RustFS が起動しない" >&2
+          exit 1
+
+      - name: バケットを用意する
+        run: mise run --quiet s3:up
+
+      - name: マイグレーションを適用する
+        run: mise run --quiet migrate
+
+      - name: db/schema.sql がマイグレーションと一致するか
+        run: mise run --quiet schema:check
+
+      - name: fmt / build / vet / test / lint / 生成物の一致
+        run: mise run --quiet check
+
+      - name: 破壊的なAPI変更がないか
+        if: github.event_name == 'pull_request'
+        env:
+          API_BASE_REF: origin/${{ github.base_ref }}
+        run: mise run --quiet api:breaking
