@@ -108,6 +108,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LO
 `, name)); err != nil {
 		return err
 	}
+	if err := insertBefore(filepath.Join(root, ".golangci.yml"), "            # golangci:replicaview",
+		fmt.Sprintf("            - pkg: %q\n              desc: \"ReplicaView は表示専用。業務判断に使わない\"\n",
+			modulePrefix+"/services/"+name+"/replicaview")); err != nil {
+		return err
+	}
 	if err := insertBefore(filepath.Join(root, "dev", "genapi", "main.go"), "		// scaffold:specs",
 		fmt.Sprintf("\t\t%q: %s.APIs(nil),\n", name, d.Pkg)); err != nil {
 		return err
