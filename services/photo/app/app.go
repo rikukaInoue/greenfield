@@ -10,11 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
-
-	"github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
-	"github.com/open-feature/go-sdk/openfeature"
 
 	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
 
@@ -26,6 +22,7 @@ import (
 	"github.com/rikukaInoue/greenfield/core/flags"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
+	"github.com/rikukaInoue/greenfield/services/photo/flagsource"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/external"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
@@ -66,9 +63,8 @@ type Config struct {
 	LocalAuthzDSN string
 	// Images は画像オブジェクトの置き場所。
 	Images blobstore.Config
-	// FlagdHost / FlagdPort はフィーチャーフラグの評価先。
-	FlagdHost string
-	FlagdPort int
+	// Flags はフィーチャーフラグの取得元。評価はプロセス内で行う（docs/adr/0013）。
+	Flags flagsource.Config
 }
 
 // ConfigFromEnv は環境変数から設定を読む。
@@ -79,8 +75,7 @@ func ConfigFromEnv() Config {
 		AdminAddr:     envOr("PHOTO_ADMIN_ADDR", ":8082"),
 		DSN:           envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo?parseTime=true"),
 		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
-		FlagdHost:     envOr("FLAGD_HOST", "localhost"),
-		FlagdPort:     envIntOr("FLAGD_PORT", 8013),
+		Flags:         flagsource.ConfigFromEnv(),
 		Images: blobstore.Config{
 			Bucket:          envOr("PHOTO_IMAGE_BUCKET", "photo-images"),
 			Region:          envOr("AWS_REGION", "us-east-1"),
@@ -131,13 +126,9 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	provider, err := flagd.NewProvider(flagd.WithHost(cfg.FlagdHost), flagd.WithPort(uint16(cfg.FlagdPort)))
-	if err != nil {
-		return nil, fmt.Errorf("flagd provider: %w", err)
-	}
-	if err := openfeature.SetProviderAndWait(provider); err != nil {
+	if err := flagsource.Register(ctx, "photo", cfg.Flags); err != nil {
 		// フラグ基盤に繋がらなくても起動は続ける。評価は宣言した既定値へ倒れる
-		slog.Warn("フラグ基盤に接続できないので既定値で動く", "host", cfg.FlagdHost, "port", cfg.FlagdPort, "err", err)
+		slog.Warn("フラグ基盤に接続できないので既定値で動く", "config", cfg.Flags, "err", err)
 	}
 	return &Deps{
 		Authenticator: authn,
@@ -222,15 +213,6 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return cause
-}
-
-func envIntOr(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return def
 }
 
 func envOr(key, def string) string {

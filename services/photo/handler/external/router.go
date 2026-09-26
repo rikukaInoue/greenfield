@@ -145,7 +145,8 @@ type ListPhotosInput struct {
 
 type ListPhotosOutput struct {
 	Body struct {
-		Photos []Photo `json:"photos" doc:"写真の一覧"`
+		Photos    []Photo `json:"photos" doc:"写真の一覧"`
+		CanCreate bool    `json:"can_create" doc:"主体が今この一覧へ写真を投稿できるか。投稿の一時停止中などは false"`
 	}
 }
 
@@ -200,6 +201,7 @@ func (h *handlers) listPhotos(ctx context.Context, in *ListPhotosInput) (*ListPh
 		return nil, toHTTP(err)
 	}
 	out := &ListPhotosOutput{}
+	out.Body.CanCreate = h.deps.Commands.CanCreate(ctx)
 	out.Body.Photos = make([]Photo, 0, len(views))
 	for _, v := range views {
 		if in.Visibility != "" && v.Visibility != in.Visibility {

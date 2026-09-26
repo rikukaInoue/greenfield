@@ -31,12 +31,6 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
-      flagd:
-        image: ghcr.io/open-feature/flagd:latest
-        ports:
-          - 8013:8013
-        # services: では command を指定できないため、フラグ定義は既定の空状態になる。
-        # アプリは宣言した既定値へ倒れるので、フラグ依存のテストは ctx へ直接値を積む。
       rustfs:
         image: rustfs/rustfs:latest
         env:
@@ -50,6 +44,11 @@ jobs:
       # compose ではなく services: のコンテナを使う。schema-dump.sh はホストの
       # mysql / mysqldump で接続する（MYSQL_CONTAINER が空のとき）
       MYSQL_CONTAINER: ""
+      # flagd は立てない。services: では command を渡せず定義を配れないため、
+      # 立てても何も検査しない飾りになる（監査 B-2）。
+      # 評価はプロセス内で行うので、定義ファイルを直接読めば経路はそのまま通る。
+      FLAGS_SOURCE: file
+      FLAGS_FILE: deploy/compose/flagd/flags.json
 
     steps:
       - uses: actions/checkout@v4

@@ -146,7 +146,7 @@ run = [
 ]
 
 [tasks."flags:up"]
-description = "フィーチャーフラグ（flagd）を起動する。CI では起動済みとみなす"
+description = "フィーチャーフラグ（flagd）を起動する。:8015 の sync から定義を同期する。CI では file 読みなので不要"
 run = '[ -n "${CI:-}" ] || docker compose up -d flagd'
 
 [tasks.flags]

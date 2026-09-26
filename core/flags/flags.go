@@ -29,7 +29,9 @@ type Evaluator struct {
 	set    Set
 }
 
-// NewEvaluator は Evaluator を返す。プロバイダは openfeature.SetProvider で先に登録しておく。
+// NewEvaluator は Evaluator を返す。domain は先に openfeature.SetNamedProvider で
+// プロバイダを登録した名前と一致させる。1プロセスに複数サービスが載る場合に
+// 互いのプロバイダを上書きしないため、無名のプロバイダは使わない。
 func NewEvaluator(domain string, set Set) *Evaluator {
 	return &Evaluator{client: openfeature.NewClient(domain), set: set}
 }
