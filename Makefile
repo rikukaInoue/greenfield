@@ -25,3 +25,23 @@ tidy:
 
 run-allinone: ## 全サービスを1プロセスで起動（Tier 1）
 	go run ./dev/allinone
+
+# --- ローカルインフラ（docker compose） ---
+COMPOSE := docker compose -f deploy/compose/compose.yaml
+
+.PHONY: db-up db-down db-reset migrate migrate-status
+
+db-up: ## mysql を起動しヘルシーになるまで待つ
+	$(COMPOSE) up -d --wait mysql
+
+db-down:
+	$(COMPOSE) down
+
+db-reset: ## データボリュームごと破棄して作り直す（init SQL を再実行させたいとき）
+	$(COMPOSE) down -v && $(COMPOSE) up -d --wait mysql
+
+migrate: ## 全サービスの expand を適用
+	go run ./services/photo/cmd/photo migrate expand
+
+migrate-status:
+	go run ./services/photo/cmd/photo migrate status
