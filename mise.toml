@@ -1,2 +1,81 @@
+# ツールのバージョン固定とタスク定義。`mise install` で揃え、`mise run` でタスク一覧から選べる。
 [tools]
 go = "1.26.6"
+
+[env]
+COMPOSE_FILE = "deploy/compose/compose.yaml"
+
+# --- ビルド・検証 ---
+# モジュールは go.work の use から拾う。CI はワークスペースを切って（GOWORK=off）各モジュールを
+# 単体でビルドし、go.mod の自己完結性＝モジュール境界を毎回検証する
+# （ワークスペースモードでは use 内の全モジュールが require なしで import できてしまうため）。
+
+[tasks.modules]
+description = "go.work に登録されたモジュール一覧"
+hide = true
+run = "awk '/^\\t\\.\\//{print $1}' go.work"
+
+[tasks."build:ws"]
+description = "ワークスペースモードで全モジュールをビルド（日常用）"
+run = 'go build $(mise run modules | sed "s#\$#/...#")'
+
+[tasks.build]
+description = "各モジュールを GOWORK=off で単体ビルド（CI相当。境界チェックはこちらでしか効かない）"
+run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go build ./...) || exit 1; done'
+
+[tasks.vet]
+description = "各モジュールを GOWORK=off で go vet"
+run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go vet ./...) || exit 1; done'
+
+[tasks.test]
+description = "各モジュールを GOWORK=off で go test（DB系のテストは mysql 到達時のみ走る）"
+run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go test ./...) || exit 1; done'
+
+[tasks.fmt]
+description = "gofmt 差分があれば失敗"
+run = 'files=$(gofmt -l $(mise run modules)); if [ -n "$files" ]; then echo "$files"; exit 1; fi'
+
+[tasks.tidy]
+description = "各モジュールを GOWORK=off で go mod tidy"
+run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exit 1; done'
+
+[tasks.check]
+description = "fmt + build + vet + test をまとめて（CI 相当）"
+depends = ["fmt", "build", "vet", "test"]
+
+# --- ローカルインフラ（docker compose） ---
+
+[tasks."db:up"]
+description = "mysql を起動しヘルシーになるまで待つ"
+run = "docker compose up -d --wait mysql"
+
+[tasks."db:down"]
+description = "コンテナを停止"
+run = "docker compose down"
+
+[tasks."db:reset"]
+description = "データボリュームごと破棄して作り直す（init SQL を再実行させたいとき）"
+run = "docker compose down -v && docker compose up -d --wait mysql"
+
+[tasks."db:shell"]
+description = "mysql クライアント（root）に入る"
+run = "docker exec -it greenfield-mysql mysql -uroot -proot"
+
+[tasks.migrate]
+description = "全サービスの expand を適用"
+depends = ["db:up"]
+run = "go run ./services/photo/cmd/photo migrate expand"
+
+[tasks."migrate:status"]
+description = "各サービスのマイグレーション状態"
+run = "go run ./services/photo/cmd/photo migrate status"
+
+# --- 実行 ---
+
+[tasks.run]
+description = "全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）"
+run = "go run ./dev/allinone"
+
+[tasks.scaffold]
+description = "新サービスの骨格を生成: mise run scaffold <name>"
+run = "go run ./dev/scaffold new-service"

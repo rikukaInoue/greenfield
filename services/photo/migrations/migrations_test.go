@@ -22,7 +22,7 @@ func testDSN(t *testing.T) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
-		t.Skipf("mysql not reachable (%v); run `make db-up`", err)
+		t.Skipf("mysql not reachable (%v); run `mise run db:up`", err)
 	}
 	return dsn
 }

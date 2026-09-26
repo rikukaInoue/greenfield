@@ -27,12 +27,14 @@ Phase 0〜6 は完全ローカル（クラウド費用ゼロ）、AWS は Phase 
 
 ## 開発
 
+ツールとタスクは `mise.toml` に集約している（`mise run` でタスク一覧から選べる）。
+
 ```
-mise install                                  # Go（mise.toml）
-make build-ws                                 # ワークスペースで全モジュールをビルド（日常用）
-make build vet test                           # 各モジュールを GOWORK=off で単体検証（CI相当。境界チェックはこちらでしか効かない）
-make db-up                                    # mysql:8.4 を起動（database/ユーザー/GRANT は deploy/compose/mysql/init）
-make migrate                                  # 各サービスの expand を適用（<name> migrate expand|contract|status）
-make run-allinone                             # 全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）
-go run ./dev/scaffold new-service <name>      # 新サービスの骨格を生成（ポートは +10 で採番）
+mise install                 # Go（mise.toml）
+mise run build:ws            # ワークスペースで全モジュールをビルド（日常用）
+mise run check               # fmt + build + vet + test を GOWORK=off で並列実行（CI相当。境界チェックはこちらでしか効かない）
+mise run db:up               # mysql:8.4 を起動（database/ユーザー/GRANT は deploy/compose/mysql/init）
+mise run migrate             # 各サービスの expand を適用（<name> migrate expand|contract|status）
+mise run run                 # 全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）
+mise run scaffold <name>     # 新サービスの骨格を生成（ポートは +10 で採番）
 ```
