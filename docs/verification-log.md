@@ -131,12 +131,15 @@
 ### 作ったもの
 
 - `core/problem`: RFC 9457（`application/problem+json`）に機械可読の `code` を必ず持たせる型。`Install()` で `huma.NewError` を差し替え、**huma が自動生成するエラー（422 の入力検証等）にも code が載る**。汎用コード（`validation_failed` 等）とドメインコード（`photo.not_found` 形式）を使い分ける
-- `core/httpapi`: リスナー（external / admin / internal）ごとの huma API 組み立てを共通化。`OpenAPIPath` / `DocsPath` / `SchemasPath` を空にしてスペック・ドキュメントをアプリから配らない（`api/` の生成物が唯一の契約置き場）。CORS ミドルウェアを入れない（全リスナーで閉）。`/healthz` は echo に直接生やして OpenAPI に載せない
+- `core/httpapi`: リスナー（external / admin / internal）ごとの huma API 組み立てを共通化。`OpenAPIPath` / `DocsPath` / `SchemasPath` を空にしてスペック・ドキュメントをアプリから配らない（`api/` の生成物が唯一の契約置き場）。CORS ミドルウェアを入れない（全リスナーで閉）。`/healthz` はルータに直接生やして OpenAPI に載せない（**訂正（監査）**: 当初「echo に」と書いたが、同じ Phase の [ADR 0001](adr/0001-router-chi.md) で chi に置き換えた）
 - `services/photo` の3リスナーに契約を定義（実装は Phase 1 以降、`501 photo.not_implemented`）:
   - external: `POST /photos`、`POST /photos/{id}:publish`（純粋な状態遷移は `:verb`）、`GET /photos/{id}`、`GET /photos`
   - admin: `GET /photos`（オペレータ）、`POST /accounts/{subject}:delete`（危険操作。ステップアップ検証用）
   - internal: `GET /photos/{id}`、`GET /gear-items/{gear_item_id}/photos`（N+1 回避の Batch 取得）
-  - OperationID = usecase 名。external と admin で応答型を別にし、管理APIの形が外部クライアントへ漏れない形にした
+  - OperationID は usecase 名に合わせる方針（**訂正（監査 A-7 / Issue #91）**: 実際は 9 中 7 で不一致。
+    `CommitPhoto`↔`CommitUpload`、`GetPhotoDetail`↔`Detail`、`AdminDeleteAccount`↔`DeleteByOwner`、
+    `ListPhotosByGearItem`↔`PublicByGearItem` 等。契約にコミット済みなので修正は oasdiff に出る変更になる）。
+    external と admin で応答型を別にし、管理APIの形が外部クライアントへ漏れない形にした
 - sqlc をコマンド側（`db/queries/repository` → `repository/internal/sqlcgen`）と読み側（`db/queries/readmodel` → `readmodel/internal/sqlcgen`）に分割。CQS をファイル境界に出す
 - `dev/genapi`: huma の型から `api/<service>/<listener>.openapi.json` を生成（`-check` で一致検証）。サーバ起動と同じ `app.APIs()` を使うため、配線とスペックが乖離しない
 - `dev/scripts/api-breaking.sh`: oasdiff の破壊的変更検出と `info.version` のメジャーを機械的に連動させる
@@ -194,7 +197,7 @@
 - `core/authz/simpleassurance`: AAL を突き合わせるだけの AssuranceChecker。不足時は **RFC 9470 の 401 + `WWW-Authenticate: Bearer error="insufficient_user_authentication", acr_values="aal2"`**
 - `core/problem`: `Headers`（`huma.HeadersError`）と `Write`（ミドルウェアからの直接書き出し）を追加
 - `core/httpapi`: `Authenticator` を**全リスナー**に適用。`RequireScope` を internal に適用（`internal:photo`）
-- `services/photo/app`: 合成ルート。ハンドラは `Deps`（interface）を受け取る形にし、実装 import は app/ と cmd/* に閉じた。admin の危険操作に `RequireAAL(AAL2)` を配線
+- `services/photo/app`: 合成ルート。ハンドラは `Deps`（interface）を受け取る形にし、実装 import は app/ と cmd/* に閉じた。admin の危険操作で `RequireAAL(AAL2)` を呼ぶ（**訂正（監査）**: 「app で配線」と書いたが、`app` が注入するのは `Assurance` だけで、`RequireAAL` の呼び出しはハンドラにある。規約が「ミドルウェアのパスマッピングではなくハンドラに明示する」と定めるとおりの配置）
 - `dev/devtoken` CLI（`mise run token -- --user alice [--aal 2] [--service svc-gear --scope internal:photo]`）
 
 ### 実験: Tier 1 だけで開発が回る / 素通しの直叩きを作らない
@@ -338,6 +341,11 @@ alice が3枚、bob が1枚投稿した状態で確認した。
 | `:publish` | `visibility=public` |
 | 署名付きURLで画像取得 | 200、元ファイルとバイト一致 |
 
+> **訂正（監査 A-3 / Issue #85）**: この実験は**一覧しか試していなかった**。
+> `GET /photos/{id}`（詳細）は `status` を見ていないため、画像を上げていない写真に 200 を返し、
+> 存在しないオブジェクトに署名付きURLを発行する。つまり「有害な不整合が表に出ない」は
+> **詳細について偽**である。主張の範囲が測定より広かった。修正は Issue #85。
+
 回収ジョブ（`mise run reclaim -- --older-than 0s`）:
 
 | | photos | pending | タプル |
@@ -372,6 +380,9 @@ RustFS は S3 プロトコルの実装そのものなので、拒否経路がロ
    `$ID:publish` はたまたま無事（`:p` が修飾子として適用されない）だったため、切り分けが余計に難しくなった。
    同じ事故を防ぐため、`app/routing_test.go` に `:verb` 到達性の回帰テストを置いた。
    これは bash の多バイト文字の件（0.4）と同じ family の罠である。
+   > **訂正（監査 A-4 / Issue #88）**: ここで「`app/routing_test.go` に回帰テストを置いた」と書いたが、
+   > **そのファイルは存在しない**（デバッグ中に削除して復元しなかった）。ルーティングを覆うテストは
+   > 1本も無い状態だった。実際に置く作業は Issue #88 で行う。
 2. **停止したつもりのプロセスが生きていると、古いバイナリに当たって延々と嘘の結果が出る。**
    `pkill` の直後に `pgrep` で確認し、必要ならポートを掴んでいる PID を落とすところまでやる。
    検証のたびに `ps -o lstart` で起動時刻を見るのが確実。
@@ -461,6 +472,10 @@ CloudWatch アラームでの自動ロールバック）が規約の展開手順
   - `packages/api-core`（`./server`）: openapi-fetch のミドルウェアでトークン注入・`X-Request-Id`・
     `Idempotency-Key` を付与し、`insufficient_user_authentication` を `StepUpRequired` として投げる
 - 認証は暫定で、`/login` が devtoken を発行して httpOnly Cookie のセッションへ保存する（ENV=production では無効）
+> **訂正（監査 D-3）**: 「ENV=production では無効」と書いたが、`env.ts` のガードは
+> `NODE_ENV === "production"` と `ENV ∈ {production, prod}` の**両方**を要求する。
+> `NODE_ENV` が未設定（`pnpm dev` 等）なら `ENV=production` でも devtoken を発行し続け、
+> `SESSION_SECRET` も既定値に落ちる。Go 側（`ENV` だけで止まる）より弱い。→ Issue #87
 - 投稿は ADR 0009 の3段（作成 → ブラウザから署名URLへ直接 PUT → commit）。画像は SSR を経由しない
 - `dev/s3admin ensure-buckets` がバケットの CORS（`FRONTEND_ORIGINS`、既定 `:5173` / `:3000`）も設定する
 
@@ -545,9 +560,14 @@ INSTANT の境界を実測: `ADD COLUMN ... NULL` は通る。**`MODIFY COLUMN` 
 
 ### 1.5e contract（#19）
 
-2つのゲートを実測で確認した。
+ゲートを実測で確認した。
 
-- **ゲート2（sqlc）**: `caption` を落とした schema に対して `sqlc generate` → `column "caption" does not exist`。クエリから参照を外すまで生成が通らない
+> **訂正（監査 A-8）**: 「2つのゲートを実測で確認した」と書いたが、**実測したのは sqlc の1つだけ**である。
+> さらにそれを「ゲート2」と呼んでいるが、`migrations/contract/000001_drop_caption.up.sql` は
+> sqlc をゲート1、フラグ削除をゲート2と番号付けしており、文書間で番号が逆だった。
+> フラグゲート（対応する `release.` フラグが削除済みであること）には**自動チェックが存在しない**。
+
+- **sqlc のゲート**: `caption` を落とした schema に対して `sqlc generate` → `column "caption" does not exist`。クエリから参照を外すまで生成が通らない
 - ゲートを満たして `contract/000001_drop_caption.up.sql`（`DROP COLUMN caption, ALGORITHM = INSTANT`）を実行。生成コードから `Caption` が消え、参照側が**コンパイルエラー**になったので修正 → これが contract の安全確認そのもの
 
 **lock timeout 実験**: 別セッションで `photos` の行をロックしたまま contract を投入。
@@ -557,6 +577,11 @@ INSTANT の境界を実測: `ADD COLUMN ... NULL` は通る。**`MODIFY COLUMN` 
 | 1回目 | **`Error 1205 Lock wait timeout exceeded`**（セッションの `lock_wait_timeout=5`。グローバルは 31536000） |
 | 同時のアプリのクエリ | 59リクエスト、**エラー0**（停滞なし） |
 | ロック解放後のリトライ | **成功**（8秒で完了、`caption` 消滅、dirty=false） |
+
+> **訂正（監査 A-2 / Issue #84）**: この「`caption` 消滅」は**手元で1回 `migrate contract` を手実行した結果**
+> であり、環境の性質ではなかった。当時 `mise run migrate` も CI も `migrate expand` しか流していなかったため、
+> 新しいローカル環境と CI の DB には `caption` が残り、sqlc の入力（contract 後）と食い違っていた。
+> #84 で `migrate` を expand → contract の順に流す形へ直し、`schema:check-live` を追加した。
 
 ### 気づき（重要）
 
@@ -982,3 +1007,46 @@ owner タプルが残る。`reclaim` の既定（`--older-than 1h --limit 100`�
    scaffold で増えたサービスが対象にならないので、サービス一覧をループする形にした
 
 いずれも「サービスが1つしかない」「テーブルとクエリがある」前提に依存していた。2サービス目を実際に作って初めて表に出た。
+
+---
+
+## 2026-09-27 — 監査の修正 5: 誤った主張の訂正（#89）
+
+`docs/audit-2026-09-27.md` の A-2 / A-3 / A-4 / A-7 / A-8 / C-5 / D-3 / E。
+
+このビルドの成果物は「動くコード」ではなく「検証の証跡」なので、記録の誤りは成果物の欠陥である。
+**誤りを消さず、その場に訂正を併記した**（何を間違えたかも還流物であるため）。
+
+### 入れた訂正（12箇所）
+
+| 場所 | 誤っていた主張 | 実際 |
+|---|---|---|
+| 1.3b | 「`app/routing_test.go` に回帰テストを置いた」 | **置いていない**（デバッグ中に削除して復元せず）。Issue #88 |
+| 1.3b #28 | 「有害な不整合が表に出ない」 | 実験は**一覧しか試していない**。詳細は `status` を見ておらず 200 を返す。Issue #85 |
+| 1.5e | 「`caption` 消滅」 | **手元で1回 contract を手実行した結果**。環境の性質ではなかった。#84 で修正済み |
+| 1.5e | 「2つのゲートを実測した」 | 実測は sqlc の1つだけ。しかも番号がマイグレーションファイルと逆。フラグゲートは自動チェックなし |
+| 0.4 | 「OperationID = usecase 名」 | **9 中 7 で不一致**。契約にコミット済みなので修正は oasdiff に出る。Issue #91 |
+| 0.4 | 「`/healthz` は echo に直接生やして」 | ルータは chi（同じ Phase の ADR 0001 で置換） |
+| 0.5 | 「`RequireAAL(AAL2)` を app で配線」 | `app` は `Assurance` を注入するだけ。呼び出しはハンドラ（規約どおりの配置） |
+| 5.2 | 「SSR の `/login` は ENV=production で無効」 | `NODE_ENV` と `ENV` の**両方**を要求。Go 側より弱い。Issue #87 |
+| ADR 0004 | 「`core` は `database/sql` にしか依存しない」 | 実装は driver を知らないが、`core/go.mod` の direct require には入っている |
+| ADR 0009 | 「`pending_upload` は表示経路に出さない」 | **詳細は絞っていない**。Issue #85 |
+| ADR 0009 | 「再実行で回収できる」 | **タプル削除の失敗後は回収できない**（候補が `photos` 由来のため到達しない） |
+| README | `mise run check` の説明 | `lint:queries` / `lint:imports` / `sqlc:check` / `api:check` も含む |
+
+### 気づき
+
+1. **誤りの多くは「実験の範囲より主張が広い」形だった。** #28 は一覧しか試していないのに
+   「一覧・詳細・サービス間API」と書き、1.5e は1つのゲートを実測して「2つ」と書いた。
+   検証を書くときは**測った範囲をそのまま書く**必要がある。
+   「たぶんこうなっているはず」を測定結果と同じ文に混ぜてはいけない
+2. **1回の手動実行を環境の性質として書いてしまう形もあった**（`caption` 消滅）。
+   手で流したものは「手で流した」と書き、自動経路に載せるまでは性質として主張しない
+3. 実装を変えたときに、それを説明した過去の記述を追わないと嘘になる（echo → chi、
+   `app` での配線 → ハンドラでの呼び出し）。ADR を書くだけでは足りず、**前の記述にも訂正が要る**
+
+### 還流
+
+- [ ] 検証の記録は「測った範囲」と「設計上の期待」を分けて書く。
+      主張の範囲が測定より広いと、後から読んだ人が検証済みだと誤認する
+- [ ] 手動実行の結果を環境の性質として書かない。自動経路（タスク / CI）に載せてから性質として主張する
