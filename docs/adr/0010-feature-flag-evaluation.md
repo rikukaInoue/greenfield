@@ -21,6 +21,12 @@ OpenFeature SDK をそのまま usecase から呼ぶと、同一リクエスト�
 自前の差し込み口（interface）は作らない。OpenFeature が標準 interface を持つので、
 プロバイダ（flagd / Unleash）の差し替えは合成ルートの1行で済む。
 
+**追記（[ADR 0013](0013-flags-evaluate-in-process.md)）**: 当初はプロバイダを flagd の既定
+（`rpc` = flagd 側で評価）で登録し、無名の `SetProvider` を使っていた。評価の場所を
+AppConfig / GrowthBook と揃えるため `in-process`（定義を同期してプロセス内で評価）へ変更し、
+登録も `SetNamedProvider` へ変えた。無名の登録はプロセスグローバルで、
+1プロセスに複数サービスが載る場合に互いを上書きする。
+
 ## 影響
 
 - フラグを増やすときは `flagSet` への宣言が必要。宣言を忘れると `flags.Bool` が false を返す

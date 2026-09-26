@@ -45,6 +45,7 @@ mise run schema:check        # db/schema.sql がマイグレーションと一�
 mise run run                 # 全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）
 mise run token -- --user alice   # 開発用トークン（認証は全リスナーで有効。トークンなしは 401）
 mise run flags               # フラグの現在値（定義は deploy/compose/flagd/flags.json を git 管理）
+#                              評価はプロセス内。FLAGS_SOURCE=file FLAGS_FILE=... で flagd なしでも動く
 mise run scaffold <name>     # 新サービスの骨格を生成（ポートは +10 で採番）
 mise run web:dev             # frontend/ の SSR（http://localhost:5173、/login で開発用ログイン）
 mise run web:gen             # api/ の OpenAPI から TS の型を再生成
