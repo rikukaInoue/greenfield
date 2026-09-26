@@ -5,5 +5,7 @@ use (
 	./dev
 	./services/photo
 	./services/photo-client
+	./services/gear
+	./services/gear-client
 	// scaffold:use
 )

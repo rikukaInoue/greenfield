@@ -56,12 +56,12 @@ hide = true
 run = "awk '/^\\t\\.\\/services\\/[a-z0-9]+$/{print substr($1,3)}' go.work"
 
 [tasks.sqlc]
-description = "各サービスで sqlc generate（生成型は repository/internal/sqlcgen）"
-run = 'for s in $(mise run services); do echo "== $s"; (cd $s && sqlc generate) || exit 1; done'
+description = "各サービスで sqlc generate（生成型は repository/internal/sqlcgen）。クエリのないサービスは明示して飛ばす"
+run = 'for s in $(mise run services); do if [ -z "$(find $s/db/queries -name "*.sql" 2>/dev/null)" ]; then echo "== $s: クエリなし（sqlc 対象外）"; continue; fi; echo "== $s"; (cd $s && sqlc generate) || exit 1; done'
 
 [tasks."sqlc:check"]
 description = "sqlc の生成物がクエリ・スキーマと一致しているか検証（CI）"
-run = 'for s in $(mise run services); do echo "== $s"; (cd $s && sqlc diff) || exit 1; done'
+run = 'for s in $(mise run services); do if [ -z "$(find $s/db/queries -name "*.sql" 2>/dev/null)" ]; then echo "== $s: クエリなし（sqlc 対象外）"; continue; fi; echo "== $s"; (cd $s && sqlc diff) || exit 1; done'
 
 [tasks."schema:dump"]
 description = "空DBにマイグレーション全適用 → mysqldump で db/schema.sql を更新（sqlc の入力）"
@@ -121,8 +121,8 @@ run = [
   "docker compose up -d flagd",
   "dev/scripts/wait-for-flagd.sh",
   "go run ./dev/s3admin ensure-buckets",
-  "go run ./services/photo/cmd/photo migrate expand",
-  "go run ./services/photo/cmd/photo migrate contract",
+  'for s in $(mise run services); do n=$(basename $s); echo "== $n expand"; go run ./$s/cmd/$n migrate expand || exit 1; done',
+  'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]
 
 [tasks."db:down"]
@@ -140,12 +140,12 @@ run = "docker exec -it greenfield-mysql mysql -uroot -proot"
 [tasks."migrate:expand"]
 description = "全サービスの expand を適用（デプロイ前ステップ相当）"
 depends = ["db:up"]
-run = "go run ./services/photo/cmd/photo migrate expand"
+run = 'for s in $(mise run services); do n=$(basename $s); echo "== $n expand"; go run ./$s/cmd/$n migrate expand || exit 1; done'
 
 [tasks."migrate:contract"]
 description = "全サービスの contract を適用（キュー消化。本番では後続リリースで明示実行する）"
 depends = ["db:up"]
-run = "go run ./services/photo/cmd/photo migrate contract"
+run = 'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done'
 
 [tasks.migrate]
 description = "ローカル・CI の DB を最新の姿にする（expand → contract）。sqlc の入力と一致させるため両方流す"
@@ -153,8 +153,8 @@ depends = ["db:up"]
 # depends は並行実行なので順序を保証できない。contract は expand の後でなければ
 # 対象の列が存在せず空振りする。run の配列は順に実行される
 run = [
-  "go run ./services/photo/cmd/photo migrate expand",
-  "go run ./services/photo/cmd/photo migrate contract",
+  'for s in $(mise run services); do n=$(basename $s); echo "== $n expand"; go run ./$s/cmd/$n migrate expand || exit 1; done',
+  'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]
 
 [tasks."flags:up"]
@@ -189,7 +189,7 @@ run = "go run ./services/photo/cmd/photo reclaim --older-than 0s --limit 100000"
 
 [tasks."migrate:status"]
 description = "各サービスのマイグレーション状態"
-run = "go run ./services/photo/cmd/photo migrate status"
+run = 'for s in $(mise run services); do n=$(basename $s); echo "== $n status"; go run ./$s/cmd/$n migrate status || exit 1; done'
 
 # --- 実行 ---
 

@@ -959,3 +959,26 @@ owner タプルが残る。`reclaim` の既定（`--older-than 1h --limit 100`�
 - [ ] `internal-07`: ローカル依存の起動は直列化する。タスクランナーの並行実行と
       `docker compose` の同一プロジェクト操作は競合する
 - [ ] `internal-07`: distroless のイメージは healthcheck を書けない。到達性はホスト側から待つ
+## 2026-09-27 — ステージ 2.0 第2サービス骨格（gear、#43）
+
+### 作ったもの
+
+- `mise run scaffold gear` で gear（:8090 / :8091 / :8092）と gear-client を生成。手を加えずに `mise run check`・
+  `schema:check`・`sqlc:check`・`api:check`・`api:breaking` が通る状態にした
+- allinone で photo と同時に起動し、gear の3リスナーが `/healthz` 200、トークンなしで 401 を返すことを確認
+
+### scaffold の初仕事で見つかったもの（生成直後に CI が落ちる箇所）
+
+1. **生成した Go ファイルが gofmt を通らない**。登録行を文字列で差し込むだけで、import の並びと map の位置揃えが崩れる。
+   差し込み後に `go/format` で整形するようにした
+2. **クエリのないサービスで `sqlc diff` / `sqlc generate` が失敗する**（`no queries contained in paths`）。
+   骨格にはクエリが無いのが当然なので、「クエリなし（sqlc 対象外）」と明示して飛ばす。黙って飛ばすと
+   監査 A-1 と同じ「0件で成功」になるため、必ず出力する
+3. **`dev/go.mod` を整えていない**。scaffold は生成したサービスでだけ `go mod tidy` しており、require を足した
+   `dev` は `GOWORK=off` のビルドで `updates to go.mod needed` になる。`dev` でも tidy する
+4. **テーブルが1つも無いと `schema-dump.sh` が黙って失敗する**。mysqldump の出力が空だと `grep -v` が終了コード 1 を返し、
+   `set -euo pipefail` でメッセージなしに落ちる。空を許容した。scaffold の `schema.sql` 雛形も dump の出力と揃えた
+5. **マイグレーション系の mise タスクが photo を直書きしていた**（`migrate` / `infra:up` / `migrate:expand|contract|status`）。
+   scaffold で増えたサービスが対象にならないので、サービス一覧をループする形にした
+
+いずれも「サービスが1つしかない」「テーブルとクエリがある」前提に依存していた。2サービス目を実際に作って初めて表に出た。

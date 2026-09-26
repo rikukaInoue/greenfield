@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	gear "github.com/rikukaInoue/greenfield/services/gear/app"
 	photo "github.com/rikukaInoue/greenfield/services/photo/app"
 	// scaffold:genapi-imports
 )
@@ -24,6 +25,7 @@ import (
 func specs() map[string]map[httpapi.Listener]httpapi.API {
 	return map[string]map[httpapi.Listener]httpapi.API{
 		"photo": photo.APIs(nil),
+		"gear":  gear.APIs(nil),
 		// scaffold:specs
 	}
 }

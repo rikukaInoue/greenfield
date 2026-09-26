@@ -23,6 +23,8 @@ linters:
           deny:
             - pkg: "github.com/rikukaInoue/greenfield/services/photo/replicaview"
               desc: "ReplicaView は表示専用。業務判断に使わない。相手のデータが必要なら <name>-client 経由で取得するか pending 状態パターンを使う"
+            - pkg: "github.com/rikukaInoue/greenfield/services/gear/replicaview"
+              desc: "ReplicaView は表示専用。業務判断に使わない"
             # golangci:replicaview
 
         # 差し込み口の実装は合成ルート（app）と cmd だけが知る。
