@@ -82,8 +82,8 @@ func run(args []string) error {
 		return err
 	}
 	if err := insertBefore(registry, "\t// scaffold:services",
-		fmt.Sprintf("\t{Name: %q, Base: %d, run: func(ctx context.Context) error {\n\t\te, i, a := addrs(%d)\n\t\treturn %s.Run(ctx, %s.Config{ExternalAddr: e, InternalAddr: i, AdminAddr: a})\n\t}},\n",
-			name, base, base, d.Pkg, d.Pkg)); err != nil {
+		fmt.Sprintf("\t{Name: %q, Base: %d, run: func(ctx context.Context) error {\n\t\tcfg := %s.ConfigFromEnv()\n\t\tcfg.ExternalAddr, cfg.InternalAddr, cfg.AdminAddr = addrs(%d)\n\t\treturn %s.Run(ctx, cfg)\n\t}},\n",
+			name, base, d.Pkg, base, d.Pkg)); err != nil {
 		return err
 	}
 	dev := filepath.Join(root, "dev")

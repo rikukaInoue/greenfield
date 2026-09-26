@@ -16,8 +16,9 @@ type service struct {
 
 var services = []service{
 	{Name: "photo", Base: 8080, run: func(ctx context.Context) error {
-		e, i, a := addrs(8080)
-		return photo.Run(ctx, photo.Config{ExternalAddr: e, InternalAddr: i, AdminAddr: a})
+		cfg := photo.ConfigFromEnv()
+		cfg.ExternalAddr, cfg.InternalAddr, cfg.AdminAddr = addrs(8080)
+		return photo.Run(ctx, cfg)
 	}},
 	// scaffold:services
 }
