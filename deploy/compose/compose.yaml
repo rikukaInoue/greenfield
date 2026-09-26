@@ -65,7 +65,9 @@ services:
     container_name: greenfield-flagd
     command: ["start", "--uri", "file:/etc/flagd/flags.json"]
     ports:
-      - "8013:8013"
+      # 8015 は flag sync service。アプリは定義をここから同期してプロセス内で評価する
+      # （docs/adr/0013）。8013（リモート評価）は使わない
+      - "8015:8015"
     volumes:
       - ./flagd:/etc/flagd:ro
     # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。
