@@ -44,8 +44,11 @@ services:
       timeout: 5s
       retries: 30
 
-  # SNS / SQS FIFO（Phase 4.2 のイベント基盤）。S3 は RustFS を使うため対象外
+  # SNS / SQS FIFO（Phase 4.2 のイベント基盤）。S3 は RustFS を使うため対象外。
+  # まだ使うコードが無いので既定では起動しない（profiles）。Phase 4.2 で外す。
+  # 起動する場合: docker compose --profile events up -d localstack
   localstack:
+    profiles: ["events"]
     image: localstack/localstack:4
     container_name: greenfield-localstack
     environment:

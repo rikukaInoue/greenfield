@@ -122,6 +122,9 @@ loop:
 		"failures":         c.failures,
 	}, "", "  ")
 	fmt.Println(string(out))
+	if *writes > 0 {
+		fmt.Fprintln(os.Stderr, "書き込みが pending_upload の行を残している。mise run reclaim:all で回収する")
+	}
 	if c.Errors.Load() > 0 {
 		os.Exit(1)
 	}
@@ -135,6 +138,7 @@ func listPhotos(client *http.Client, base, token string, c *counters) {
 }
 
 // createPhoto は投稿する。画像は上げないので pending_upload のまま残り、回収ジョブの対象になる。
+// 溜まった行は `mise run reclaim:all` で回収する（オブジェクト → 行 → タプルの順に削除される）。
 func createPhoto(client *http.Client, base, token string, c *counters) {
 	body, _ := json.Marshal(map[string]any{
 		"caption":      fmt.Sprintf("loadgen %d", time.Now().UnixNano()),

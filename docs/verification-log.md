@@ -879,3 +879,83 @@ CI において機械的に強制する」と定めるが、**そのような li
       新サービスの追加でルールが増える設定は、scaffold が追記する形にする
 - [ ] `internal-01`: `readmodel` から `replicaview` は許す（表示用データを読むのは Read Model の仕事）。
       規約の「Entity および usecase の業務判断から」という限定を明示的に読む
+
+---
+
+## 2026-09-27 — 監査の修正 4: 運用・設定（#92）
+
+`docs/audit-2026-09-27.md` の F-1 / F-2 / F-3。
+
+### F-1 `infra:up` の並行競合（再現できた）
+
+`depends = ["db:up", "s3:up", "flags:up"]` の3タスクが並行して `docker compose up` を呼ぶため、
+同一プロジェクトのネットワーク作成で競合する。**実際に踏んだ**:
+
+```
+[s3:up]    Network greenfield_default Creating
+[db:up]    Network greenfield_default Creating
+[flags:up] Network greenfield_default Creating
+[s3:up]    Network greenfield_default Created
+[db:up]    Network greenfield_default Error  network with name greenfield_default already exists
+```
+
+`infra:up` を1回の `docker compose up -d --wait mysql rustfs` にまとめて直列化した。
+修正後は `already exists` の出現が 0 になった。
+
+これは #84 で観測した「mise の `depends` は並行実行される」と同じ原因である。
+
+### F-1 flagd を待たない
+
+flagd のイメージは distroless でシェルも curl も持たないため、compose の healthcheck を書けない
+（書けば常に unhealthy になる。0.5 の作業で実際にそうなっていた）。そのため `--wait` の対象にできず、
+`infra:up` は flagd の起動中に戻っていた。直後にアプリを立てると定義を同期できず、
+**宣言した既定値のままプロセスの生涯を過ごす**（警告1行のみ、リトライなし）。
+
+`dev/scripts/wait-for-flagd.sh` を追加し、ホスト側から TCP で到達性を待つようにした（`--wait` 相当の回復）。
+
+```
+[infra:up] $ dev/scripts/wait-for-flagd.sh
+flagd は localhost:8015 で応答している
+```
+
+### F-2 localstack が死んだ定義
+
+起動するタスクもコードも無い（Phase 4.2 まで使わない）。compose の `profiles: ["events"]` に移し、
+既定では起動しないようにした。使うときは `docker compose --profile events up -d localstack`。
+
+### F-3 loadgen のゴミと回収
+
+`loadgen` は画像を上げず `:commit` も呼ばないので、書き込みごとに `pending_upload` の行と
+owner タプルが残る。`reclaim` の既定（`--older-than 1h --limit 100`）では1回の後片付けに
+1時間待って複数回実行が必要だった。
+
+- `mise run reclaim:all`（`--older-than 0s --limit 100000`）を追加
+- `loadgen` が終了時に「`mise run reclaim:all` で回収する」と案内する（ゴミを作る側が回収方法を示す）
+
+実測:
+
+| | photos | pending | タプル |
+|---|---|---|---|
+| 負荷後 | 836 | 814 | 842 |
+| 既定の `reclaim`（1時間以上前のみ） | — | — | reclaimed=100 |
+| `reclaim:all` | — | — | reclaimed=714 |
+| 回収後 | **22** | **0** | **28** |
+
+### 気づき
+
+1. **`depends` の並行実行は2箇所で実害を出した**（#84 の migrate の順序、本件のネットワーク競合）。
+   タスクランナーの `depends` は「前に実行する」であって「順に実行する」ではない。
+   順序や排他が要るものは1つのタスクの `run` 配列にまとめる
+2. **healthcheck を書けないイメージがある。** distroless はシェルも curl も持たないため
+   コンテナ内 healthcheck が成立しない。`--wait` に頼れないので、ホスト側のプローブで代替する。
+   「healthcheck を書いたのに常に unhealthy」より「書かずにホストから待つ」方が正しい
+3. **ゴミを作るツールに回収方法を言わせる。** `reclaim` は存在していたが手動タスクにしか現れず、
+   既定値も検証向きではなかった。作る側が案内すれば、次に使う人が同じ調査をしない
+
+### 還流
+
+- [ ] `internal-06`（運用系TODO）: 回収ジョブ（`pending` 状態の後片付け）を定期実行の対象として
+      挙げる。実装があっても呼ぶ経路が無ければ溜まり続ける
+- [ ] `internal-07`: ローカル依存の起動は直列化する。タスクランナーの並行実行と
+      `docker compose` の同一プロジェクト操作は競合する
+- [ ] `internal-07`: distroless のイメージは healthcheck を書けない。到達性はホスト側から待つ
