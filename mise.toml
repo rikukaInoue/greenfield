@@ -148,6 +148,30 @@ run = "go run ./dev/allinone"
 description = "開発用の擬似トークンを発行: mise run token -- --user alice [--aal 2]"
 run = "go run ./dev/devtoken"
 
+# --- フロントエンド（frontend/、React Router SSR） ---
+
+[tasks."web:install"]
+description = "frontend/ の依存を入れる（lockfile 固定）"
+dir = "frontend"
+run = "pnpm install --frozen-lockfile"
+
+[tasks."web:gen"]
+description = "api/ の OpenAPI から TS の型を再生成（frontend/packages/*-api）"
+dir = "frontend"
+run = "pnpm gen"
+
+[tasks."web:dev"]
+description = "SSR の開発サーバー（:5173）。photo は mise run run で起動しておく"
+depends = ["web:install"]
+dir = "frontend"
+run = "pnpm dev"
+
+[tasks."web:check"]
+description = "生成型の一致 + typecheck + build（CI）"
+depends = ["web:install"]
+dir = "frontend"
+run = ["pnpm --filter @greenfield/photo-api gen:check", "pnpm typecheck", "pnpm build"]
+
 [tasks.scaffold]
 description = "新サービスの骨格を生成: mise run scaffold <name>"
 run = "go run ./dev/scaffold new-service"

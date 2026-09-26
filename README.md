@@ -30,7 +30,7 @@ Phase 0〜6 は完全ローカル（クラウド費用ゼロ）、AWS は Phase 
 ツールとタスクは `mise.toml` に集約している（`mise run` でタスク一覧から選べる）。
 
 ```
-mise install                 # Go（mise.toml）
+mise install                 # Go / Node / pnpm（mise.toml）
 mise run build:ws            # ワークスペースで全モジュールをビルド（日常用）
 mise run check               # fmt + build + vet + test を GOWORK=off で並列実行（CI相当。境界チェックはこちらでしか効かない）
 mise run infra:up            # mysql + RustFS + flagd を起動し、バケット作成とマイグレーションまで済ませる
@@ -46,4 +46,7 @@ mise run run                 # 全サービスを1プロセスで起動（Tier 1
 mise run token -- --user alice   # 開発用トークン（認証は全リスナーで有効。トークンなしは 401）
 mise run flags               # フラグの現在値（定義は deploy/compose/flagd/flags.json を git 管理）
 mise run scaffold <name>     # 新サービスの骨格を生成（ポートは +10 で採番）
+mise run web:dev             # frontend/ の SSR（http://localhost:5173、/login で開発用ログイン）
+mise run web:gen             # api/ の OpenAPI から TS の型を再生成
+mise run web:check           # 生成型の一致 + typecheck + build（CI）
 ```
