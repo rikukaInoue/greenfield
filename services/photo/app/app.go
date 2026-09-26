@@ -44,7 +44,6 @@ const InternalScope = "internal:photo"
 // 安全な側（既存動作）にする。
 var flagSet = flags.Set{
 	{Name: usecase.FlagDisableUploads, Default: false},
-	{Name: usecase.FlagCaptionToTitle, Default: false},
 }
 
 // actionRelations は photo の action と FGA モデルの relation の対応。

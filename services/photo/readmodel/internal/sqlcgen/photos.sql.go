@@ -13,20 +13,20 @@ import (
 
 const getPhotoDetail = `-- name: GetPhotoDetail :one
 
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos WHERE id = ?
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id = ?
 `
 
 // 読み側（Read Model）のクエリ。Entity を経由せず応答の形を直接組み立てる。tx 外で実行する。
 // 参照できるのは自ドメイン（photo）のテーブルのみ。他ドメインは <name>-client 経由の HTTP か ReplicaView で取得する。
 // アップロード未完了（pending_upload）の行は表示経路に出さない。
 // SELECT * を使うのは全列を表示に使うため。contract で列を落とせば生成コードが変わり、参照側がコンパイルで落ちる。
+// 改名は完了済み。表示は title だけを使う。
 func (q *Queries) GetPhotoDetail(ctx context.Context, id uint64) (Photo, error) {
 	row := q.db.QueryRowContext(ctx, getPhotoDetail, id)
 	var i Photo
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerSubject,
-		&i.Caption,
 		&i.Visibility,
 		&i.GearItemID,
 		&i.CreatedAt,
@@ -35,12 +35,13 @@ func (q *Queries) GetPhotoDetail(ctx context.Context, id uint64) (Photo, error) 
 		&i.ContentType,
 		&i.SizeBytes,
 		&i.Status,
+		&i.Title,
 	)
 	return i, err
 }
 
 const listPhotos = `-- name: ListPhotos :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos ORDER BY created_at DESC LIMIT ?
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos ORDER BY created_at DESC LIMIT ?
 `
 
 // オペレータ向けの全件一覧（pending も含める。運用上の可視性のため）
@@ -56,7 +57,6 @@ func (q *Queries) ListPhotos(ctx context.Context, limit int32) ([]Photo, error) 
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerSubject,
-			&i.Caption,
 			&i.Visibility,
 			&i.GearItemID,
 			&i.CreatedAt,
@@ -65,6 +65,7 @@ func (q *Queries) ListPhotos(ctx context.Context, limit int32) ([]Photo, error) 
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Status,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}
@@ -80,7 +81,7 @@ func (q *Queries) ListPhotos(ctx context.Context, limit int32) ([]Photo, error) 
 }
 
 const listPhotosByIDs = `-- name: ListPhotosByIDs :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos WHERE id IN (/*SLICE:ids*/?) AND status = 'ready' ORDER BY created_at DESC
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id IN (/*SLICE:ids*/?) AND status = 'ready' ORDER BY created_at DESC
 `
 
 // 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る
@@ -106,7 +107,6 @@ func (q *Queries) ListPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, e
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerSubject,
-			&i.Caption,
 			&i.Visibility,
 			&i.GearItemID,
 			&i.CreatedAt,
@@ -115,6 +115,7 @@ func (q *Queries) ListPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, e
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Status,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}
@@ -130,7 +131,7 @@ func (q *Queries) ListPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, e
 }
 
 const listPhotosByOwner = `-- name: ListPhotosByOwner :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos WHERE owner_subject = ? AND status = 'ready' ORDER BY created_at DESC LIMIT ?
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE owner_subject = ? AND status = 'ready' ORDER BY created_at DESC LIMIT ?
 `
 
 type ListPhotosByOwnerParams struct {
@@ -150,7 +151,6 @@ func (q *Queries) ListPhotosByOwner(ctx context.Context, arg ListPhotosByOwnerPa
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerSubject,
-			&i.Caption,
 			&i.Visibility,
 			&i.GearItemID,
 			&i.CreatedAt,
@@ -159,6 +159,7 @@ func (q *Queries) ListPhotosByOwner(ctx context.Context, arg ListPhotosByOwnerPa
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Status,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}
@@ -174,7 +175,7 @@ func (q *Queries) ListPhotosByOwner(ctx context.Context, arg ListPhotosByOwnerPa
 }
 
 const listPublicPhotosByGearItem = `-- name: ListPublicPhotosByGearItem :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos WHERE gear_item_id = ? AND visibility = 'public' AND status = 'ready' ORDER BY created_at DESC LIMIT ?
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE gear_item_id = ? AND visibility = 'public' AND status = 'ready' ORDER BY created_at DESC LIMIT ?
 `
 
 type ListPublicPhotosByGearItemParams struct {
@@ -194,7 +195,6 @@ func (q *Queries) ListPublicPhotosByGearItem(ctx context.Context, arg ListPublic
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerSubject,
-			&i.Caption,
 			&i.Visibility,
 			&i.GearItemID,
 			&i.CreatedAt,
@@ -203,6 +203,7 @@ func (q *Queries) ListPublicPhotosByGearItem(ctx context.Context, arg ListPublic
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Status,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}

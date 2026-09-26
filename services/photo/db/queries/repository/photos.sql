@@ -1,7 +1,7 @@
 -- コマンド側（Entity の復元・保存）のクエリ。参照できるのは自ドメイン（photo）のテーブルのみ。
 
 -- name: CreatePhoto :execresult
-INSERT INTO photos (owner_subject, caption, visibility, gear_item_id, object_key, content_type, status)
+INSERT INTO photos (owner_subject, title, visibility, gear_item_id, object_key, content_type, status)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetPhotoForUpdate :one
@@ -9,7 +9,7 @@ SELECT * FROM photos WHERE id = ? FOR UPDATE;
 
 -- name: UpdatePhoto :exec
 UPDATE photos
-SET caption = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
+SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
 WHERE id = ?;
 
 -- name: DeletePhotosByOwner :execresult

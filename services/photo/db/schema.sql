@@ -2,7 +2,6 @@
 CREATE TABLE `photos` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `owner_subject` varchar(255) NOT NULL,
-  `caption` varchar(1000) NOT NULL DEFAULT '',
   `visibility` enum('private','public') NOT NULL DEFAULT 'private',
   `gear_item_id` bigint unsigned DEFAULT NULL,
   `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -11,6 +10,7 @@ CREATE TABLE `photos` (
   `content_type` varchar(100) DEFAULT NULL,
   `size_bytes` bigint unsigned DEFAULT NULL,
   `status` enum('pending_upload','ready') NOT NULL DEFAULT 'ready',
+  `title` varchar(1000) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_photos_owner` (`owner_subject`,`created_at`),
   KEY `idx_photos_status_created` (`status`,`created_at`)

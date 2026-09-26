@@ -12,9 +12,11 @@ import (
 
 // PhotoView は一覧・詳細で返す読み取り用の形。Entity を経由しない。
 type PhotoView struct {
-	ID         int64
-	OwnerID    string
-	Caption    string
+	ID      int64
+	OwnerID string
+	Caption string
+	// Title は改名中の新カラム。表示に使うかはフラグで決まる（contract 後に消す）
+	Title      string
 	Visibility string
 	GearItemID *int64
 	Status     string
@@ -63,9 +65,14 @@ func (q *PhotoQueries) withImageURL(ctx context.Context, v PhotoView) PhotoView 
 	return v
 }
 
-func (q *PhotoQueries) withImageURLs(ctx context.Context, vs []PhotoView) []PhotoView {
+// view は表示用の最終形にする。
+func (q *PhotoQueries) view(ctx context.Context, v PhotoView) PhotoView {
+	return q.withImageURL(ctx, v)
+}
+
+func (q *PhotoQueries) views(ctx context.Context, vs []PhotoView) []PhotoView {
 	for i := range vs {
-		vs[i] = q.withImageURL(ctx, vs[i])
+		vs[i] = q.view(ctx, vs[i])
 	}
 	return vs
 }
@@ -85,7 +92,7 @@ func (q *PhotoQueries) Detail(ctx context.Context, id domain.PhotoID, consistenc
 	if err != nil {
 		return PhotoView{}, err
 	}
-	return q.withImageURL(ctx, v), nil
+	return q.view(ctx, v), nil
 }
 
 // List は主体が見られる写真を返す。ListAccessible が返した ID を WHERE IN で絞る。
@@ -109,15 +116,24 @@ func (q *PhotoQueries) List(ctx context.Context, limit int) ([]PhotoView, error)
 	if err != nil {
 		return nil, err
 	}
-	return q.withImageURLs(ctx, vs), nil
+	return q.views(ctx, vs), nil
 }
 
 // ListForOperator は全ユーザーの写真を返す。オペレータ向けで、権限は呼び出し側が確認する。
 func (q *PhotoQueries) ListForOperator(ctx context.Context, ownerSubject string, limit int) ([]PhotoView, error) {
+	var (
+		vs  []PhotoView
+		err error
+	)
 	if ownerSubject != "" {
-		return q.reader.ListByOwner(ctx, ownerSubject, limit)
+		vs, err = q.reader.ListByOwner(ctx, ownerSubject, limit)
+	} else {
+		vs, err = q.reader.ListAll(ctx, limit)
 	}
-	return q.reader.ListAll(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return q.views(ctx, vs), nil
 }
 
 // 参照系は署名URLの付与以外にオブジェクトストレージへ触らない。
@@ -142,7 +158,7 @@ func (q *PhotoQueries) PublicDetail(ctx context.Context, id int64) (PhotoView, e
 	if v.Visibility != string(domain.Public) || v.Status != string(domain.Ready) {
 		return PhotoView{}, ErrNotFound
 	}
-	return q.withImageURL(ctx, v), nil
+	return q.view(ctx, v), nil
 }
 
 // PublicByGearItem は機材に紐づく公開済みの写真を返す。
@@ -151,5 +167,5 @@ func (q *PhotoQueries) PublicByGearItem(ctx context.Context, gearItemID int64, l
 	if err != nil {
 		return nil, err
 	}
-	return q.withImageURLs(ctx, vs), nil
+	return q.views(ctx, vs), nil
 }

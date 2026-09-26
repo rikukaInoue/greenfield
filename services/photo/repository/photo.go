@@ -17,12 +17,23 @@ import (
 
 // PhotoRepository は photos テーブルへの読み書き。
 type PhotoRepository struct {
-	q *sqlcgen.Queries
+	q    *sqlcgen.Queries
+	conn *sql.DB
 }
 
 // NewPhotoRepository は PhotoRepository を返す。
-func NewPhotoRepository(db *sql.DB) *PhotoRepository {
-	return &PhotoRepository{q: sqlcgen.New(db)}
+func NewPhotoRepository(conn *sql.DB) *PhotoRepository {
+	return &PhotoRepository{q: sqlcgen.New(conn), conn: conn}
+}
+
+// db は生のクエリを投げる先。ctx にトランザクションがあればそれを使う。
+func (r *PhotoRepository) db(ctx context.Context) interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+} {
+	if tx, ok := consistency.TxFrom(ctx); ok {
+		return tx
+	}
+	return r.conn
 }
 
 // queries は ctx にトランザクションがあればそれに参加する。
@@ -37,7 +48,7 @@ func (r *PhotoRepository) queries(ctx context.Context) *sqlcgen.Queries {
 func (r *PhotoRepository) Create(ctx context.Context, p *domain.Photo) error {
 	res, err := r.queries(ctx).CreatePhoto(ctx, sqlcgen.CreatePhotoParams{
 		OwnerSubject: p.OwnerSubject(),
-		Caption:      string(p.Caption()),
+		Title:        nullString(string(p.Caption())),
 		Visibility:   sqlcgen.PhotosVisibility(p.Visibility()),
 		GearItemID:   nullInt64(p.GearItemID()),
 		ObjectKey:    nullString(p.ObjectKey()),
@@ -71,7 +82,7 @@ func restore(row sqlcgen.Photo) *domain.Photo {
 	return domain.Restore(domain.Restored{
 		ID:           domain.PhotoID(row.ID),
 		OwnerSubject: row.OwnerSubject,
-		Caption:      domain.Caption(row.Caption),
+		Caption:      domain.Caption(row.Title.String),
 		Visibility:   domain.Visibility(row.Visibility),
 		GearItemID:   fromNullInt64(row.GearItemID),
 		ObjectKey:    row.ObjectKey.String,
@@ -85,7 +96,7 @@ func restore(row sqlcgen.Photo) *domain.Photo {
 // Save は Entity の状態を行へ書き戻す。
 func (r *PhotoRepository) Save(ctx context.Context, p *domain.Photo) error {
 	if err := r.queries(ctx).UpdatePhoto(ctx, sqlcgen.UpdatePhotoParams{
-		Caption:     string(p.Caption()),
+		Title:       nullString(string(p.Caption())),
 		Visibility:  sqlcgen.PhotosVisibility(p.Visibility()),
 		GearItemID:  nullInt64(p.GearItemID()),
 		ContentType: nullString(p.ContentType()),
