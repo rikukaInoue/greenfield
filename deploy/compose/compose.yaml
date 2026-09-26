@@ -65,11 +65,9 @@ services:
     container_name: greenfield-flagd
     command: ["start", "--uri", "file:/etc/flagd/flags.json"]
     ports:
-      # 8015 は flag sync service。Go 側は定義をここから同期してプロセス内で評価する（docs/adr/0013）
+      # 8015 は flag sync service。アプリは定義をここから同期してプロセス内で評価する（docs/adr/0013）。
+      # 8013（リモート評価）は使わない。SSR はフラグを評価しない（docs/adr/0014）
       - "8015:8015"
-      # 8013 はリモート評価。SSR が現状こちらを使っているため残す。
-      # 取得元を AppConfig Agent へ寄せる際に両方まとめて外す
-      - "8013:8013"
     volumes:
       - ./flagd:/etc/flagd:ro
     # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。

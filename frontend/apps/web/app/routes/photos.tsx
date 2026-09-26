@@ -2,7 +2,7 @@ import { unwrap } from "@greenfield/api-core/server";
 import type { Visibility } from "@greenfield/photo-api";
 import { Link, NavLink } from "react-router";
 import type { Route } from "./+types/photos";
-import { flagsContext, photoClientContext } from "../context";
+import { photoClientContext } from "../context";
 import { toRouteError } from "../.server/errors";
 import { formatDate, PhotoImage, VisibilityBadge } from "../components";
 
@@ -15,7 +15,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const api = context.get(photoClientContext);
   try {
     const body = await unwrap(api.GET("/photos", { params: { query: { visibility, limit: 50 } } }));
-    return { photos: body.photos ?? [], visibility, uploadsDisabled: context.get(flagsContext)["ops.photo_disable_uploads"] };
+    return { photos: body.photos ?? [], visibility, canCreate: body.can_create };
   } catch (err) {
     toRouteError(err, request);
   }
@@ -28,17 +28,17 @@ const filters = [
 ];
 
 export default function Photos({ loaderData }: Route.ComponentProps) {
-  const { photos, visibility, uploadsDisabled } = loaderData;
+  const { photos, visibility, canCreate } = loaderData;
   return (
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">写真</h1>
-        {uploadsDisabled ? (
-          <span className="text-sm text-stone-500">投稿を一時停止中</span>
-        ) : (
+        {canCreate ? (
           <Link to="/photos/new" className="rounded bg-stone-900 px-3 py-1.5 text-sm text-white dark:bg-stone-100 dark:text-stone-900">
             投稿する
           </Link>
+        ) : (
+          <span className="text-sm text-stone-500">投稿を一時停止中</span>
         )}
       </div>
       <nav className="mt-4 flex gap-2 text-sm">

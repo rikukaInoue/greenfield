@@ -12,10 +12,6 @@
   "dependencies": {
     "@greenfield/api-core": "workspace:*",
     "@greenfield/photo-api": "workspace:*",
-    "@grpc/grpc-js": "~1.14.5",
-    "@openfeature/core": "^1.12.0",
-    "@openfeature/flagd-provider": "^0.16.1",
-    "@openfeature/server-sdk": "^1.23.0",
     "@react-router/node": "^8.4.0",
     "@react-router/serve": "^8.4.0",
     "isbot": "^5.1.36",

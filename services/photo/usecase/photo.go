@@ -74,6 +74,21 @@ func NewPhotoCommands(atomic Atomic, photos PhotoRepository, images ImageStore, 
 	return &PhotoCommands{atomic: atomic, photos: photos, images: images, authorizer: authorizer, relations: relations, faults: faults}
 }
 
+// CanCreate は主体が今投稿できるかを返す。Create と同じ判定を使う。
+func (c *PhotoCommands) CanCreate(ctx context.Context) bool {
+	return c.checkCreate(ctx) == nil
+}
+
+func (c *PhotoCommands) checkCreate(ctx context.Context) error {
+	if flags.Bool(ctx, FlagDisableUploads) {
+		return ErrUploadsDisabled
+	}
+	if _, ok := authz.PrincipalFrom(ctx); !ok {
+		return ErrForbidden
+	}
+	return nil
+}
+
 // CreatePhotoInput は投稿の入力。
 type CreatePhotoInput struct {
 	Caption     string
@@ -92,13 +107,10 @@ type CreatePhotoResult struct {
 // オブジェクトストレージは外部システムでロールバックできないため、鍵の予約だけを先に行い、
 // 実体の存在確認は Commit で行う。
 func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*CreatePhotoResult, error) {
-	if flags.Bool(ctx, FlagDisableUploads) {
-		return nil, ErrUploadsDisabled
+	if err := c.checkCreate(ctx); err != nil {
+		return nil, err
 	}
-	p, ok := authz.PrincipalFrom(ctx)
-	if !ok {
-		return nil, ErrForbidden
-	}
+	p, _ := authz.PrincipalFrom(ctx)
 	caption, err := domain.ParseCaption(in.Caption)
 	if err != nil {
 		return nil, err
