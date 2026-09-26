@@ -134,16 +134,12 @@ run = "docker compose exec -T flagd cat /etc/flagd/flags.json 2>/dev/null || cat
 description = "負荷をかける: mise run load -- -duration 60s -rps 20"
 run = "go run ./dev/loadgen"
 
-[tasks.backfill]
-description = "改名中のバックフィルを流す: mise run backfill -- title --batch 100"
-run = "go run ./services/photo/cmd/photo backfill"
-
 [tasks."rename:drill"]
-description = "負荷をかけたままカラム改名を完走させるドリル（#25 / #21 / #15）"
+description = "改名ドリル（#25 / #21 / #15）。--old/--new/--flag/--backfill が必須"
 run = "dev/scripts/rename-drill.sh"
 
 [tasks.columncheck]
-description = "改名中の新旧カラムの一致を検算: mise run columncheck -- -old caption -new title -watch 2s"
+description = "改名中の新旧カラムの一致を検算: mise run columncheck -- -old <旧> -new <新> [-watch 2s]"
 run = "go run ./dev/columncheck"
 
 [tasks.reclaim]

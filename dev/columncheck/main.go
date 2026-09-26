@@ -2,9 +2,12 @@
 //
 //	go run ./dev/columncheck -old caption -new title
 //	go run ./dev/columncheck -old caption -new title -watch 2s
+//	go run ./dev/columncheck -old caption -new title -exists-only
 //
 // 二重書きとバックフィルが正しければ一致率は 100% になる。
-// 新カラムが存在しない（expand 前）場合はその旨を出して exit 0 で抜ける。
+//
+// 終了コード: 0 = 一致（または -exists-only で両方存在）、1 = 不一致、2 = カラムが無い。
+// 呼び出し側（ドリル）が「まだ expand していない」と「一致しない」を区別できるようにしてある。
 package main
 
 import (
@@ -30,11 +33,12 @@ type result struct {
 
 func main() {
 	var (
-		dsn    = flag.String("dsn", envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo"), "接続先")
-		table  = flag.String("table", "photos", "対象テーブル")
-		oldCol = flag.String("old", "", "旧カラム")
-		newCol = flag.String("new", "", "新カラム")
-		watch  = flag.Duration("watch", 0, "指定すると間隔をおいて繰り返す")
+		dsn        = flag.String("dsn", envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo"), "接続先")
+		table      = flag.String("table", "photos", "対象テーブル")
+		oldCol     = flag.String("old", "", "旧カラム")
+		newCol     = flag.String("new", "", "新カラム")
+		watch      = flag.Duration("watch", 0, "指定すると間隔をおいて繰り返す")
+		existsOnly = flag.Bool("exists-only", false, "両カラムの存在だけを確かめる")
 	)
 	flag.Parse()
 	if *oldCol == "" || *newCol == "" {
@@ -49,17 +53,23 @@ func main() {
 	defer db.Close()
 
 	for {
-		exists, err := columnExists(db, *table, *newCol)
+		missing, err := missingColumns(db, *table, *oldCol, *newCol)
 		if err != nil {
 			fail(err)
 		}
-		if !exists {
-			fmt.Printf("%s.%s は未作成（expand 前）\n", *table, *newCol)
+		if len(missing) > 0 {
+			for _, c := range missing {
+				fmt.Printf("%s.%s は存在しない\n", *table, c)
+			}
 			if *watch == 0 {
-				return
+				os.Exit(2)
 			}
 			time.Sleep(*watch)
 			continue
+		}
+		if *existsOnly {
+			fmt.Printf("%s.%s と %s.%s はどちらも存在する\n", *table, *oldCol, *table, *newCol)
+			return
 		}
 		r, err := check(db, *table, *oldCol, *newCol)
 		if err != nil {
@@ -103,12 +113,21 @@ func check(db *sql.DB, table, oldCol, newCol string) (result, error) {
 	return r, nil
 }
 
-func columnExists(db *sql.DB, table, column string) (bool, error) {
-	var n int
-	err := db.QueryRow(
-		"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-		table, column).Scan(&n)
-	return n > 0, err
+// missingColumns は指定のカラムのうち存在しないものを返す。
+func missingColumns(db *sql.DB, table string, columns ...string) ([]string, error) {
+	var missing []string
+	for _, c := range columns {
+		var n int
+		if err := db.QueryRow(
+			"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+			table, c).Scan(&n); err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			missing = append(missing, c)
+		}
+	}
+	return missing, nil
 }
 
 // quote は識別子をバッククォートで囲む。バッククォート自体は許さない。
