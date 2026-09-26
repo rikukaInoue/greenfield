@@ -111,9 +111,16 @@ description = "オブジェクトストレージ（RustFS）を起動しバケ�
 run = ['[ -n "${CI:-}" ] || docker compose up -d --wait rustfs', 'go run ./dev/s3admin ensure-buckets']
 
 [tasks."infra:up"]
-description = "ローカル依存を一括起動（mysql + RustFS + flagd + マイグレーション）"
-depends = ["db:up", "s3:up", "flags:up"]
+description = "ローカル依存を一括起動（mysql + RustFS + flagd + バケット + マイグレーション）"
+# depends は並行実行される。docker compose を同時に呼ぶと同一プロジェクトのネットワーク作成で
+# 競合するため（Network ... already exists）、1回の compose 呼び出しにまとめる
 run = [
+  # flagd は healthcheck を書けないため --wait の対象にできない。起動だけ同じ呼び出しで行い、
+  # 到達性はホスト側の TCP プローブで待つ
+  "docker compose up -d --wait mysql rustfs",
+  "docker compose up -d flagd",
+  "dev/scripts/wait-for-flagd.sh",
+  "go run ./dev/s3admin ensure-buckets",
   "go run ./services/photo/cmd/photo migrate expand",
   "go run ./services/photo/cmd/photo migrate contract",
 ]
@@ -151,8 +158,10 @@ run = [
 ]
 
 [tasks."flags:up"]
-description = "フィーチャーフラグ（flagd）を起動する。:8015 の sync から定義を同期する。CI では file 読みなので不要"
-run = '[ -n "${CI:-}" ] || docker compose up -d flagd'
+description = "フィーチャーフラグ（flagd）を起動し、到達可能になるまで待つ。CI では file 読みなので不要"
+# flagd は distroless でシェルも curl も持たないためコンテナ内 healthcheck を書けない。
+# ホスト側から TCP で待つ（待たないと直後の起動が既定値のまま縮退する）
+run = '[ -n "${CI:-}" ] || { docker compose up -d flagd && dev/scripts/wait-for-flagd.sh; }'
 
 [tasks.flags]
 description = "フラグの現在値を表示する"
@@ -171,8 +180,12 @@ description = "改名中の新旧カラムの一致を検算: mise run columnche
 run = "go run ./dev/columncheck"
 
 [tasks.reclaim]
-description = "アップロード未完了の写真を回収する: mise run reclaim -- --older-than 1m"
+description = "アップロード未完了の写真を回収する（既定は1時間以上前・100件まで）: mise run reclaim -- --older-than 0s --limit 1000"
 run = "go run ./services/photo/cmd/photo reclaim"
+
+[tasks."reclaim:all"]
+description = "検証で溜まった未完了の写真をすべて回収する（loadgen の後片付け）"
+run = "go run ./services/photo/cmd/photo reclaim --older-than 0s --limit 100000"
 
 [tasks."migrate:status"]
 description = "各サービスのマイグレーション状態"
