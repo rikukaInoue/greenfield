@@ -121,6 +121,10 @@ run = "go run ./services/photo/cmd/photo migrate status"
 description = "全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）"
 run = "go run ./dev/allinone"
 
+[tasks.token]
+description = "開発用の擬似トークンを発行: mise run token -- --user alice [--aal 2]"
+run = "go run ./dev/devtoken"
+
 [tasks.scaffold]
 description = "新サービスの骨格を生成: mise run scaffold <name>"
 run = "go run ./dev/scaffold new-service"

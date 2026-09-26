@@ -9,13 +9,26 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/core/problem"
 )
 
+// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
+// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+type Deps struct {
+	Assurance authz.AssuranceChecker
+}
+
+type handlers struct {
+	deps Deps
+}
+
 // Register は admin リスナーのルートを登録する。
 // オペレータの権限は専用機構を作らず ReBAC（platform operator）に載せる（docs/03-platform.md）。
-func Register(api httpapi.API) {
+func Register(api httpapi.API, deps Deps) {
+	h := &handlers{deps: deps}
+
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "AdminListPhotos",
 		Method:      http.MethodGet,
@@ -24,7 +37,7 @@ func Register(api httpapi.API) {
 		Description: "platform operator の権限で列挙する。専用機構ではなく ReBAC で解決する。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
-	}, adminListPhotos)
+	}, h.adminListPhotos)
 
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "AdminDeleteAccount",
@@ -34,7 +47,7 @@ func Register(api httpapi.API) {
 		Description: "ステップアップ（RFC 9470）の検証対象。AAL2 を要求する呼び出し語彙を固定してある。",
 		Tags:        []string{"accounts"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
-	}, adminDeleteAccount)
+	}, h.adminDeleteAccount)
 }
 
 type AdminListPhotosInput struct {
@@ -68,11 +81,15 @@ type AdminDeleteAccountOutput struct {
 	}
 }
 
-func adminListPhotos(ctx context.Context, in *AdminListPhotosInput) (*AdminListPhotosOutput, error) {
+func (h *handlers) adminListPhotos(ctx context.Context, in *AdminListPhotosInput) (*AdminListPhotosOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "AdminListPhotos は Phase 1.2 で実装する")
 }
 
-func adminDeleteAccount(ctx context.Context, in *AdminDeleteAccountInput) (*AdminDeleteAccountOutput, error) {
-	// RequireAAL(AAL2) の呼び出しは Phase 3.3 で配線する（呼び出し語彙はここに固定してある）。
+func (h *handlers) adminDeleteAccount(ctx context.Context, in *AdminDeleteAccountInput) (*AdminDeleteAccountOutput, error) {
+	// 保証レベルの要求はミドルウェアのパスマッピングではなくハンドラに明示する
+	// （パス設計の変更で認可が静かに壊れる事故を避けるため。conventions/internal-04）。
+	if err := h.deps.Assurance.RequireAAL(ctx, authz.AAL2); err != nil {
+		return nil, err
+	}
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "AdminDeleteAccount は Phase 5 で実装する")
 }

@@ -11,13 +11,28 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/core/problem"
 )
 
+// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
+// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+type Deps struct {
+	Authorizer authz.Authorizer
+	Lister     authz.Lister
+	Assurance  authz.AssuranceChecker
+}
+
+type handlers struct {
+	deps Deps
+}
+
 // Register は internal リスナーのルートを登録する。
 // 「プライベートだから無認証」は採らない: scope 付きの client_credentials を要求する（#27）。
-func Register(api httpapi.API) {
+func Register(api httpapi.API, deps Deps) {
+	h := &handlers{deps: deps}
+
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "GetPhotoForService",
 		Method:      http.MethodGet,
@@ -26,7 +41,7 @@ func Register(api httpapi.API) {
 		Description: "gear が作例の表示に用いる。公開データのみを返す。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
-	}, getPhotoForService)
+	}, h.getPhotoForService)
 
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "ListPhotosByGearItem",
@@ -36,7 +51,7 @@ func Register(api httpapi.API) {
 		Description: "一覧の行ごとに相手を呼ぶ形（HTTP越しのN+1）を避けるためのBatch取得API。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
-	}, listPhotosByGearItem)
+	}, h.listPhotosByGearItem)
 }
 
 // ServicePhoto はサービス間で公開する写真の表現。相手のテーブル構造ではなくこの契約に依存させる。
@@ -67,10 +82,10 @@ type ListPhotosByGearItemOutput struct {
 	}
 }
 
-func getPhotoForService(ctx context.Context, in *GetPhotoForServiceInput) (*GetPhotoForServiceOutput, error) {
+func (h *handlers) getPhotoForService(ctx context.Context, in *GetPhotoForServiceInput) (*GetPhotoForServiceOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "GetPhotoForService は Phase 4.1 で実装する")
 }
 
-func listPhotosByGearItem(ctx context.Context, in *ListPhotosByGearItemInput) (*ListPhotosByGearItemOutput, error) {
+func (h *handlers) listPhotosByGearItem(ctx context.Context, in *ListPhotosByGearItemInput) (*ListPhotosByGearItemOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "ListPhotosByGearItem は Phase 4.1 で実装する")
 }

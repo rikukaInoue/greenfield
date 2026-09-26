@@ -23,7 +23,7 @@ import (
 // specs はサービス名 → リスナー別 API。新サービスは scaffold がここへ登録する。
 func specs() map[string]map[httpapi.Listener]httpapi.API {
 	return map[string]map[httpapi.Listener]httpapi.API{
-		"photo": photo.APIs(),
+		"photo": photo.APIs(nil),
 		// scaffold:specs
 	}
 }

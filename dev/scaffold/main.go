@@ -109,7 +109,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LO
 		return err
 	}
 	if err := insertBefore(filepath.Join(root, "dev", "genapi", "main.go"), "		// scaffold:specs",
-		fmt.Sprintf("\t\t%q: %s.APIs(),\n", name, d.Pkg)); err != nil {
+		fmt.Sprintf("\t\t%q: %s.APIs(nil),\n", name, d.Pkg)); err != nil {
 		return err
 	}
 	if err := insertBefore(filepath.Join(root, "dev", "genapi", "main.go"), "	// scaffold:genapi-imports",
