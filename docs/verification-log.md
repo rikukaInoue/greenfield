@@ -387,3 +387,64 @@ RustFS は S3 プロトコルの実装そのものなので、拒否経路がロ
 - [ ] internal-07: ローカル環境で S3 を模擬する場合、LocalStack S3 は署名付きURLの検証に使えない。
       S3互換の実サーバ（RustFS / MinIO 等）を置く
 - [ ] internal-07: `:verb` のURLをシェルで組むときの罠（zsh の `$var:x` 修飾子）を注意書きとして残す
+
+---
+
+## 2026-09-27 — ステージ 1.4 フラグ（#37）
+
+### 作ったもの
+
+- `core/flags`: 宣言（フラグ名 + 既定値）を受け取り、入口のミドルウェアで1回評価して ctx へ積む。
+  ハンドラ・usecase は `flags.Bool(ctx, name)` しか使わない（[ADR 0010](adr/0010-feature-flag-evaluation.md)）
+- flagd を compose へ（:8013）。定義は `deploy/compose/flagd/flags.json` を git 管理し、変更を PR に載せる
+- フラグ2つを宣言:
+  - `ops.photo_disable_uploads`（Ops・長期）: 署名URL発行を止めるキルスイッチ
+  - `release.photo_caption_to_title`（Release）: 1.5 の改名で使う読み切替。今は定義だけ
+
+### 実験
+
+| 操作 | `POST /photos` | 備考 |
+|---|---|---|
+| フラグ OFF（既定） | 200 `pending_upload` | |
+| **定義ファイルを on に書き換え** | **503** `photo.uploads_disabled` | **再デプロイなし** |
+| 同時に `GET /photos` | 1件（影響なし） | フラグの範囲が1つの振る舞いに閉じている |
+| off に戻す | 200 | 再デプロイなしで復帰 |
+| **flagd を停止した状態** | **200** | 宣言した既定値 false へ倒れる（安全側 = 既存動作） |
+
+切替は `docker compose exec` も再起動も不要で、ファイル書き換えから約3秒で反映された。
+
+### 気づき
+
+1. `go get` が go.mod の go directive を `1.26` → `1.26.0` に上げ、`go.work` の `go 1.26` と
+   食い違って全モジュールのビルドが落ちた（`module ... requires go >= 1.26.0, but go.work lists go 1.26`）。
+   依存を追加したら `go.work` 側も揃える必要がある。
+2. GitHub Actions の `services:` は `command` を指定できないため、flagd に定義ファイルを渡せない。
+   CI では flagd が空の状態で起動し、アプリは宣言した既定値へ倒れる。
+   フラグ依存のテストは `flags.WithValues` で ctx に値を積む形にした（flagd を立てずに ON/OFF 両方を通せる）。
+3. flagd provider は `NewProvider` が `(*Provider, error)` を返す。`openfeature.SetProviderAndWait` に
+   直接渡せない。
+
+### 還流
+
+- [ ] internal-08: 「入口で1回評価」の実装形（サービスが名前 + 既定値を宣言し、ミドルウェアがまとめて評価）を追記
+- [ ] internal-07: CI の `services:` では `command` が使えないため、定義ファイルを要する依存
+      （flagd 等）は compose と同じ形で立てられない。テストは既定値側で通す設計にしておく
+
+### 追記: AWS でのフラグ基盤（Phase 7 の方針）
+
+`go-sdk-contrib/providers` を確認したところ、AWS AppConfig 用の OpenFeature プロバイダは**存在しない**
+（AWS 系は `aws-ssm` = Parameter Store だけ。実際の一覧: aws-ssm / configcat / flagd / flagd-in-process /
+flagsmith / flipt / from-env / gcp / go-feature-flag / harness / launchdarkly / multi-provider / ofrep /
+optimizely / prefab / rocketflag / statsig / unleash）。
+
+AppConfig を採る方針にしたため、プロバイダは自作する（[ADR 0011](adr/0011-flag-provider-on-aws.md)、Issue #79）。
+flagd を S3 sync で動かす選択肢もあったが、AppConfig の段階デプロイ（割合 + ベイク時間 +
+CloudWatch アラームでの自動ロールバック）が規約の展開手順とそのまま噛み合うためそちらを採った。
+
+あわせて判明した flagd の制約:
+
+- flagd の `--uri` は filepath / HTTP / gRPC / Kubernetes CR / **GCS / Azure Blob / S3** を取れる。
+  AppConfig は非対応
+- イメージは distroless でシェルも curl も持たないため、**コンテナ内の healthcheck を書けない**。
+  当初 `/flagd-build --version` を指定していて常に unhealthy になっていた。healthcheck を外し、
+  到達性はアプリ側が既定値へ倒れる形で吸収する

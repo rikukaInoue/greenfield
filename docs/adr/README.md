@@ -30,3 +30,5 @@
 | [0007](0007-spec-version-before-implementation.md) | 実装前に切った契約のバージョンは 1.0.0 にしない | 要 |
 | [0008](0008-object-storage-rustfs.md) | ローカルのオブジェクトストレージは RustFS（LocalStack S3 は使わない） | 要 |
 | [0009](0009-presigned-upload.md) | 画像は署名付きURLでアップロードし pending → ready で確定する | 要 |
+| [0010](0010-feature-flag-evaluation.md) | フラグは入口で1回評価して ctx に積む | 要 |
+| [0011](0011-flag-provider-on-aws.md) | AWS では AppConfig 用の OpenFeature プロバイダを自作する | 要 |

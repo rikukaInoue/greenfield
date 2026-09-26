@@ -55,7 +55,7 @@ photo ──(イベント: PhotoPublished)──▶ gear             起きれ�
 | openfga | ReBACエンジン。platform/authz からのみ到達 |
 | rustfs | 画像オブジェクト（S3互換）。署名付きURLの検証が本物と同じに働くことが選定理由（docs/adr/0008） |
 | localstack | SNS + SQS FIFO（Eventual基盤）。S3 は使わない |
-| flagd | フィーチャーフラグ（OpenFeatureプロバイダ。フラグ定義はリポジトリ内ファイルをgit管理） |
+| flagd | フィーチャーフラグ（OpenFeatureプロバイダ。定義は `deploy/compose/flagd/flags.json` をgit管理）。:8013 |
 | otel-collector + jaeger | トレース。昇格シグナルの観測手段を初日から持つ（可観測性なしでは昇格条件が絵に描いた餅になるため） |
 
 ローカル環境は conventions/internal-07-local-dev.md の二段構えに従う。Tier 1（既定）はポート直（photo: 8080/8081/8082、gear: 8090/8091/8092）+ `dev/allinone` + devトークンCLI。Tier 2はcomposeのCaddyで `*.localhost` のホストベースルーティングを組む。issuer整合（conventions/internal-07の罠）の扱い: Tier 1ではGoアプリを**ホストプロセス**で動かし（コンテナはmysql/keycloak等のインフラのみ）、issuer = `http://localhost:8180` がブラウザ・アプリ双方から同じ名前で解決するため罠は発生しない。CIも同様（ランナー上でアプリ実行）。罠が効くのはアプリをコンテナ化するTier 2（SSR等）のみで、そこではCaddyのnetwork aliasで `auth.localhost` に統一する。SSR系（Phase 5）の検証はTier 2、Phase 0〜4の大半はTier 1で行う。クラウド展開はPhase 7（AWS検証）のみとし、単一VPC + ALB + ECS + RDSの最小構成を `terraform apply → 検証 → destroy` の使い捨てで回す（Phase 0〜6はクラウド費用ゼロ）。TGW・egress統制は模擬しない（01のスコープ外）。

@@ -59,6 +59,18 @@ services:
       timeout: 5s
       retries: 30
 
+  # フィーチャーフラグ。定義はリポジトリ内のファイルを git 管理し、変更を PR レビューに載せる
+  flagd:
+    image: ghcr.io/open-feature/flagd:latest
+    container_name: greenfield-flagd
+    command: ["start", "--uri", "file:/etc/flagd/flags.json"]
+    ports:
+      - "8013:8013"
+    volumes:
+      - ./flagd:/etc/flagd:ro
+    # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。
+    # 到達性は依存する側（アプリ）が既定値へ倒れる形で吸収する。
+
 volumes:
   mysql-data:
   rustfs-data:

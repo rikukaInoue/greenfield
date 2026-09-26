@@ -1,0 +1,12 @@
+{
+  "name": "greenfield-frontend",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "scripts": {
+    "gen": "pnpm -r run gen",
+    "dev": "pnpm --filter @greenfield/web dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}

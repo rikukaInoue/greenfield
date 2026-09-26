@@ -37,7 +37,7 @@ func Register(api httpapi.API, deps Deps) {
 		Path:        "/photos",
 		Summary:     "写真を投稿する",
 		Tags:        []string{"photos"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, h.createPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
@@ -257,6 +257,8 @@ func toHTTP(err error) error {
 		return problem.New(http.StatusConflict, "photo.not_pending", "アップロード待ちではない")
 	case errors.Is(err, usecase.ErrObjectNotFound):
 		return problem.New(http.StatusConflict, "photo.object_not_found", "画像がアップロードされていない")
+	case errors.Is(err, usecase.ErrUploadsDisabled):
+		return problem.New(http.StatusServiceUnavailable, "photo.uploads_disabled", "投稿を一時停止中")
 	case errors.Is(err, domain.ErrInvalid):
 		return problem.New(http.StatusUnprocessableEntity, problem.CodeValidationFailed, err.Error())
 	case errors.Is(err, usecase.ErrInjectedFault):
