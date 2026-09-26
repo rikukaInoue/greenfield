@@ -560,3 +560,17 @@ INSTANT の境界を実測: `ADD COLUMN ... NULL` は通る。**`MODIFY COLUMN` 
 - [ ] internal-05: ツールのエラーがドライバのエラーを `Unwrap` しない場合があり、エラー番号での判定が効かないことがある。リトライは実際にロックを掛けて確かめる
 - [ ] internal-05: INSTANT の境界の具体例（`ADD COLUMN NULL` は可、型を縮める `MODIFY COLUMN` は不可）
 - [ ] internal-08: 読み切替は「新カラムが空なら旧カラムへ倒す」形にすると、フラグの展開とバックフィルの順序に依存しなくなる
+
+## 2026-09-27 — ステージ 5.2 ブラウザ E2E（#56）
+
+`mise run web:e2e`、CI に組み込み。投稿の3段・公開・他人の写真の不可視・#17（トークン非露出 / CORS 閉）の9本。
+
+E2E を入れて初めて見つかったもの:
+
+1. **`dev/allinone` が photo を空の設定で起動していた**。ポートだけを詰めた `Config` を渡しており、
+   DSN・S3・flagd が空で、DB に触れる全エンドポイントが 500 になっていた。curl での確認は `cmd/photo`
+   （`ConfigFromEnv`）で起動した photo に対して行っていたため気づかなかった。scaffold の生成行も同じ形だったので併せて修正
+2. **ハイドレーション前の投稿**。投稿は `clientAction` でしか動かないため、JS 読込前に押すと素のフォーム送信になり失敗する。
+   CI の遅い環境で顕在化した。ハイドレーションまでボタンを無効にした
+3. Playwright の `webServer` に `go run` / `pnpm start` を起動させると、テスト後も子プロセスが残り
+   GitHub Actions のステップが終わらない（20分以上ハング）。CI では前段で起動し、Playwright は再利用だけにした
