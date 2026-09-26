@@ -1,0 +1,64 @@
+# モジュール内の import 規律を機械で守る。
+# モジュール間の境界は go.mod と GOWORK=off のビルドが守る（docs/adr/0006）。
+# ここで守るのはそれでは届かない細則である。
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - depguard
+
+  settings:
+    depguard:
+      rules:
+        # ReplicaView は他ドメインの読み取り専用の複製で、正は相手にある。
+        # 業務判断に使わせないため Entity と usecase から見せない（conventions/internal-01）。
+        # readmodel からは許す。ReplicaView は表示用のデータであり、Read Model が読むのが本来の経路。
+        no-replicaview-in-domain:
+          files:
+            - "**/domain/*.go"
+            - "**/usecase/*.go"
+          # depguard の pkg はプレフィックス一致で glob を解釈しない。サービスごとに列挙する
+          # （scaffold が新サービス分を追記する）
+          deny:
+            - pkg: "github.com/rikukaInoue/greenfield/services/photo/replicaview"
+              desc: "ReplicaView は表示専用。業務判断に使わない。相手のデータが必要なら <name>-client 経由で取得するか pending 状態パターンを使う"
+            # golangci:replicaview
+
+        # 差し込み口の実装は合成ルート（app）と cmd だけが知る。
+        # usecase / handler / domain は core/authz の interface しか見ない（docs/adr/0003）。
+        adapters-only-in-composition-root:
+          files:
+            - "**/usecase/*.go"
+            - "**/handler/**/*.go"
+            - "**/domain/*.go"
+            - "**/readmodel/*.go"
+            - "**/repository/*.go"
+          deny:
+            - pkg: "github.com/rikukaInoue/greenfield/core/authz/localauthz"
+              desc: "差し込み口の実装は app と cmd だけが import する。ここは core/authz の interface を使う"
+            - pkg: "github.com/rikukaInoue/greenfield/core/authz/staticauthn"
+              desc: "差し込み口の実装は app と cmd だけが import する"
+            - pkg: "github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
+              desc: "差し込み口の実装は app と cmd だけが import する"
+            - pkg: "github.com/rikukaInoue/greenfield/core/authz/devtoken"
+              desc: "開発用トークンの実装は app と cmd と dev だけが import する"
+            - pkg: "github.com/rikukaInoue/greenfield/services/photo/blobstore"
+              desc: "オブジェクトストレージの実装は app が注入する。ここは usecase.ImageStore を使う"
+            - pkg: "github.com/rikukaInoue/greenfield/services/photo/flagsource"
+              desc: "フラグの取得元は app が登録する。ここは core/flags を使う"
+            # golangci:adapters
+
+        # ドメイン層を素の HTTP / DB から遠ざける。
+        no-infrastructure-in-domain:
+          files:
+            - "**/domain/*.go"
+          deny:
+            - pkg: "database/sql"
+              desc: "Entity は永続化を知らない。Repository が行との変換を持つ"
+            - pkg: "net/http"
+              desc: "Entity は HTTP を知らない。入出力は handler の仕事"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
