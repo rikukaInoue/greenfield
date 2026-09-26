@@ -86,3 +86,40 @@
 ### 追記: タスクランナーを Makefile → mise tasks に変更
 
 `mise.toml` で Go のバージョンを固定している以上、タスクも同じファイルに置けば追加ツールなしで揃う。`depends` による依存（`migrate` → `db:up`）と並列実行（`check`）、`mise run` の一覧が Makefile より扱いやすい。入力→生成物のキャッシュ（sqlc / client 生成）が欲しくなった時点で Task（Taskfile）への移行を再検討する。
+
+---
+
+## 2026-09-26 — ステージ 0.3 sqlc + 整合CI（#30） / チェック #2（#2）
+
+### 作ったもの
+
+- `services/photo/sqlc.yaml`: 入力は `db/schema.sql`（自DBのスキーマ）と `db/queries/*.sql` のみ。生成先は **`repository/internal/sqlcgen`** — Go の internal 規則により `repository/` の外（usecase / handler）から import できず、「sqlc生成型はRepository実装の内部に閉じる」規約を構造で強制する
+- `db/schema.sql` は手書きしない。`dev/scripts/schema-dump.sh <svc> --write|--check` が空DB（`<svc>_schemacheck`）へ expand + contract を全適用し `mysqldump --no-data` を正規化して出力／比較する。`mise run schema:dump` / `schema:check`
+- `dev/querylint`: クエリのテーブル位置（FROM/JOIN/INTO/UPDATE の直後）の名前を検査し、`db.table` 形式の修飾参照と、schema.sql にないテーブルを弾く（許可リスト = 自DBの CREATE TABLE。手書きリストは持たない）。`mise run lint:queries`。単体テスト付き
+- `mise run sqlc`（generate）/ `sqlc:check`（`sqlc diff`）。`check` に lint:queries と sqlc:check を追加
+- 初期クエリ: CreatePhoto / GetPhoto / ListPhotosByIDs（`sqlc.slice`、ListAccessible + WHERE IN 用）/ ListPhotosByOwner
+- sqlc 1.31.1 を mise.toml で固定
+
+### 実験: #2 sqlc入力限定は越境クエリを生成時に落とす
+
+| 手順 | 結果 |
+|---|---|
+| `JOIN gear.items g` を含むクエリで `sqlc generate` | **失敗**: `schema "gear" does not exist` |
+| 同クエリで `querylint` | 失敗: `qualified table "gear.items" (cross-database access is forbidden)` |
+| 修飾なしの未知テーブル `FROM items` | sqlc: `relation "items" does not exist` / querylint: `table "items" is not in schema.sql` |
+| `usecase` から `repository/internal/sqlcgen` を import | **ビルド不能**: `use of internal package ... not allowed` |
+| 正常なクエリ | sqlc generate 成功、querylint ok、`schema:check` up to date |
+
+期待どおり「生成失敗」。二重のゲート（sqlc 自身 + 生成器非依存の lint）で成立する。
+
+### 気づき
+
+1. golang-migrate は系統にファイルが1つもない（contract キューが空）と `first .: file does not exist` を返す。`fs.ErrNotExist` を「適用対象なし」として扱うよう `Up` を修正（テンプレートにも反映）。
+2. querylint の初版は `x.y` 形式を全て越境扱いにしていたため `p.id`（別名.カラム）を誤検出した。テーブル位置に限定して解消。正規表現ベースなので、サブクエリ等の複雑な形は sqlc 側のゲートに任せる（lint は第2のゲート）。
+3. `mysqldump --no-data --compact` でも `/*!40101 ... */` 行が残るため grep で除去。`AUTO_INCREMENT=N` も除去して正規化。
+4. schema dump は running mysql 上の scratch database で行うため、CI は mysql コンテナだけあればよい（mysqldump はコンテナ内のものを使う）。
+
+### 還流
+
+- [ ] internal-02: 「sqlc生成型はRepository実装の内部に閉じる」の実現手段として `repository/internal/` 配下への生成を推奨（コンパイラで強制できる）
+- [ ] internal-05: sqlc 入力スキーマは scratch database + `mysqldump --no-data` の正規化出力とし、`/*!` 行と `AUTO_INCREMENT=` を除去する旨

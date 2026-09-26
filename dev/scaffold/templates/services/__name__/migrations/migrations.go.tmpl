@@ -48,8 +48,9 @@ func Up(ctx context.Context, dsn string, s Series) error {
 		}
 		err = m.Up()
 		closeFn()
-		if err == nil || errors.Is(err, migrate.ErrNoChange) {
-			if errors.Is(err, migrate.ErrNoChange) {
+		// 系統にファイルが1つもない（contract キューが空等）場合、golang-migrate はソース走査で ErrNotExist を返す。適用対象なしとして扱う。
+		if err == nil || errors.Is(err, migrate.ErrNoChange) || errors.Is(err, fs.ErrNotExist) {
+			if err != nil {
 				slog.Info("migrate: no change", "series", s)
 			}
 			return nil
