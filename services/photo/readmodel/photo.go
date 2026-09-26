@@ -84,7 +84,7 @@ func view(row sqlcgen.Photo) usecase.PhotoView {
 	v := usecase.PhotoView{
 		ID:         int64(row.ID),
 		OwnerID:    row.OwnerSubject,
-		Caption:    row.Caption,
+		Caption:    row.Title.String,
 		Visibility: string(row.Visibility),
 		Status:     string(row.Status),
 		ObjectKey:  row.ObjectKey.String,

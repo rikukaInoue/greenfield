@@ -2,6 +2,7 @@
 -- 参照できるのは自ドメイン（photo）のテーブルのみ。他ドメインは <name>-client 経由の HTTP か ReplicaView で取得する。
 -- アップロード未完了（pending_upload）の行は表示経路に出さない。
 -- SELECT * を使うのは全列を表示に使うため。contract で列を落とせば生成コードが変わり、参照側がコンパイルで落ちる。
+-- 改名は完了済み。表示は title だけを使う。
 
 -- name: GetPhotoDetail :one
 SELECT * FROM photos WHERE id = ?;

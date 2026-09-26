@@ -53,8 +53,6 @@ const uploadTTL = 15 * time.Minute
 const (
 	// FlagDisableUploads はストレージ障害時の縮退用キルスイッチ（長期）。
 	FlagDisableUploads = "ops.photo_disable_uploads"
-	// FlagCaptionToTitle は caption → title の改名の読み切替（Phase 1.5 で削除）。
-	FlagCaptionToTitle = "release.photo_caption_to_title"
 )
 
 // PhotoCommands は写真の更新系ユースケース。

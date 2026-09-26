@@ -9,15 +9,6 @@
         "off": false
       },
       "defaultVariant": "off"
-    },
-    "release.photo_caption_to_title": {
-      "description": "caption から title への改名の読み切替。Phase 1.5 で段階展開する。期限: 1.5e 完了時に削除",
-      "state": "ENABLED",
-      "variants": {
-        "on": true,
-        "off": false
-      },
-      "defaultVariant": "off"
     }
   }
 }

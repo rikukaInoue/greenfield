@@ -98,7 +98,6 @@ func (ns NullPhotosVisibility) Value() (driver.Value, error) {
 type Photo struct {
 	ID           uint64
 	OwnerSubject string
-	Caption      string
 	Visibility   PhotosVisibility
 	GearItemID   sql.NullInt64
 	CreatedAt    time.Time
@@ -107,4 +106,5 @@ type Photo struct {
 	ContentType  sql.NullString
 	SizeBytes    sql.NullInt64
 	Status       PhotosStatus
+	Title        sql.NullString
 }

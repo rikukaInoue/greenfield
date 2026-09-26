@@ -13,13 +13,13 @@ import (
 
 const createPhoto = `-- name: CreatePhoto :execresult
 
-INSERT INTO photos (owner_subject, caption, visibility, gear_item_id, object_key, content_type, status)
+INSERT INTO photos (owner_subject, title, visibility, gear_item_id, object_key, content_type, status)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreatePhotoParams struct {
 	OwnerSubject string
-	Caption      string
+	Title        sql.NullString
 	Visibility   PhotosVisibility
 	GearItemID   sql.NullInt64
 	ObjectKey    sql.NullString
@@ -31,7 +31,7 @@ type CreatePhotoParams struct {
 func (q *Queries) CreatePhoto(ctx context.Context, arg CreatePhotoParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createPhoto,
 		arg.OwnerSubject,
-		arg.Caption,
+		arg.Title,
 		arg.Visibility,
 		arg.GearItemID,
 		arg.ObjectKey,
@@ -58,7 +58,7 @@ func (q *Queries) DeletePhotosByOwner(ctx context.Context, ownerSubject string) 
 }
 
 const getPhotoForUpdate = `-- name: GetPhotoForUpdate :one
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos WHERE id = ? FOR UPDATE
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id = ? FOR UPDATE
 `
 
 func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, error) {
@@ -67,7 +67,6 @@ func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, erro
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerSubject,
-		&i.Caption,
 		&i.Visibility,
 		&i.GearItemID,
 		&i.CreatedAt,
@@ -76,12 +75,13 @@ func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, erro
 		&i.ContentType,
 		&i.SizeBytes,
 		&i.Status,
+		&i.Title,
 	)
 	return i, err
 }
 
 const listStalePendingPhotos = `-- name: ListStalePendingPhotos :many
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos
 WHERE status = 'pending_upload' AND created_at < ?
 ORDER BY created_at LIMIT ?
 `
@@ -104,7 +104,6 @@ func (q *Queries) ListStalePendingPhotos(ctx context.Context, arg ListStalePendi
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerSubject,
-			&i.Caption,
 			&i.Visibility,
 			&i.GearItemID,
 			&i.CreatedAt,
@@ -113,6 +112,7 @@ func (q *Queries) ListStalePendingPhotos(ctx context.Context, arg ListStalePendi
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Status,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}
@@ -129,12 +129,12 @@ func (q *Queries) ListStalePendingPhotos(ctx context.Context, arg ListStalePendi
 
 const updatePhoto = `-- name: UpdatePhoto :exec
 UPDATE photos
-SET caption = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
+SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
 WHERE id = ?
 `
 
 type UpdatePhotoParams struct {
-	Caption     string
+	Title       sql.NullString
 	Visibility  PhotosVisibility
 	GearItemID  sql.NullInt64
 	ContentType sql.NullString
@@ -145,7 +145,7 @@ type UpdatePhotoParams struct {
 
 func (q *Queries) UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) error {
 	_, err := q.db.ExecContext(ctx, updatePhoto,
-		arg.Caption,
+		arg.Title,
 		arg.Visibility,
 		arg.GearItemID,
 		arg.ContentType,

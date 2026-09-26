@@ -448,3 +448,74 @@ CloudWatch アラームでの自動ロールバック）が規約の展開手順
 - イメージは distroless でシェルも curl も持たないため、**コンテナ内の healthcheck を書けない**。
   当初 `/flagd-build --version` を指定していて常に unhealthy になっていた。healthcheck を外し、
   到達性はアプリ側が既定値へ倒れる形で吸収する
+
+---
+
+## 2026-09-27 — ステージ 1.5a〜1.5e オンラインマイグレーション（#38〜#42） / チェック #15 #19 #21 #25
+
+`caption` → `title` の改名を、負荷をかけたまま完走させた。Phase 1 の出口。
+
+### 1.5a 観測手段
+
+- `dev/loadgen`: external API へ連続して読み書きを流し、2xx 以外を失敗として数える。終了時に JSON、エラー1件以上で exit 1
+- `dev/columncheck`: 新旧カラムの一致を検算（全行、`<=>` で NULL 安全比較）。新カラム未作成なら「expand 前」と出して抜ける
+
+### 1.5b expand + 二重書き（#15）
+
+- `000003_caption_to_title.up.sql`: `ADD COLUMN title VARCHAR(1000) NULL, ALGORITHM = INSTANT`。バックフィルは同梱しない
+- 書き込みクエリは `caption` と `title` の両方へ同じ値を入れる（フラグに関係なく常時実行）
+- 読み側は両方のカラムを取り、どちらを表示に使うかを usecase がフラグで決める
+
+INSTANT の境界を実測: `ADD COLUMN ... NULL` は通る。**`MODIFY COLUMN` で型を縮める変更は `ERROR 1846 ALGORITHM=INSTANT is not supported. Reason: Need to rebuild the table`** となり、expand には置けない（規約の「例外」に当たる変更の具体例）。
+
+### 1.5c バックフィル
+
+`photo backfill title --batch N --pause D`。主キー順に区切り、バッチごとに独立したトランザクションで確定。`title IS NULL` を条件にするので冪等で、中断しても続きから進む。
+
+初回: `filled=45 batches=3` → 一致率 **100.00%**。
+
+### 1.5d + #25 負荷をかけたままの改名ドリル
+
+`dev/scripts/rename-drill.sh`（`mise run rename:drill`）が一式を自動で回す。フラグは flagd の `fractional` targeting で割合を刻み、キーは `targetingKey`（= Principal.Subject）に固定。
+
+| 段階 | 一致率 |
+|---|---|
+| バックフィル直後 | 100.00%（58行） |
+| フラグ 1% | 100.00%（71行） |
+| フラグ 50% | 100.00%（83行） |
+| フラグ 100% | 100.00%（96行） |
+| OFF 巻き戻し → 100% へ戻す | — |
+| 負荷終了後の最終検算 | **100.00%（324行）** |
+
+負荷の結果: **1399リクエスト、エラー0件、全て 200**。フラグ操作は定義ファイルの書き換えのみで、**再デプロイなし**（#21）。
+
+### 1.5e contract（#19）
+
+2つのゲートを実測で確認した。
+
+- **ゲート2（sqlc）**: `caption` を落とした schema に対して `sqlc generate` → `column "caption" does not exist`。クエリから参照を外すまで生成が通らない
+- ゲートを満たして `contract/000001_drop_caption.up.sql`（`DROP COLUMN caption, ALGORITHM = INSTANT`）を実行。生成コードから `Caption` が消え、参照側が**コンパイルエラー**になったので修正 → これが contract の安全確認そのもの
+
+**lock timeout 実験**: 別セッションで `photos` の行をロックしたまま contract を投入。
+
+| | 結果 |
+|---|---|
+| 1回目 | **`Error 1205 Lock wait timeout exceeded`**（セッションの `lock_wait_timeout=5`。グローバルは 31536000） |
+| 同時のアプリのクエリ | 59リクエスト、**エラー0**（停滞なし） |
+| ロック解放後のリトライ | **成功**（8秒で完了、`caption` 消滅、dirty=false） |
+
+### 気づき（重要）
+
+1. **ロック待ちのリトライが実は効いていなかった。** golang-migrate はドライバのエラーを独自の型で包み `Unwrap` を通さないため、`errors.As(err, &*mysql.MySQLError)` が false になり `isLockTimeout` が常に false を返していた。メッセージ中の `Error 1205` も見るようにして解決。**「リトライを書いた」だけでは効いているか分からない**という実例。
+2. **失敗すると golang-migrate は dirty を立て、そのままではリトライできない。** 2回目以降が `Dirty database version 1. Fix and force version.` で止まる。`source.Prev()` でひとつ前のバージョンを求めて `Force()` し、dirty を解消してから再試行する処理を入れた。1ファイル1文で書く前提なら失敗した文は適用されていないので安全だが、複数文を1ファイルに書くと部分適用が起こりうるので手で確認が必要。→ 還流
+3. **sqlc は同じ名前付きパラメータを型の異なる2カラムへ使えない。** `caption`（NOT NULL）と `title`（NULL 許容）に `sqlc.arg(caption)` を共用しようとして `named param Caption has incompatible types: sql.NullString, string`。二重書きでは呼び出し側が同じ値を2つの引数へ渡す形にする。
+4. 二重書きが効いている状態ではバックフィルの対象が 0 件になる（新規行は最初から埋まる）。ドリル中の `filled=0` は正常。
+5. 読み切替は「フラグ ON でも新カラムが空なら旧カラムへ倒す」形にした。バックフィル未完了の行があってもフラグを上げられるので、展開とバックフィルの順序に依存しない。
+6. `SELECT *` にしていたため、`DROP COLUMN` で生成 struct から `Caption` が消え、参照側が即コンパイルエラーになった。列を明示していても同じ結果になるが、`SELECT *` でもゲートは働く。
+
+### 還流
+
+- [ ] internal-05: 「適用時は lock_wait_timeout を短く設定し、失敗時はリトライする」の実装には**dirty 状態の解消**が必要。golang-migrate では失敗時に dirty が立ち、`source.Prev()` + `Force()` で戻してから再試行する。1ファイル1文で書く規約もここから導かれる（部分適用を避けるため）
+- [ ] internal-05: ツールのエラーがドライバのエラーを `Unwrap` しない場合があり、エラー番号での判定が効かないことがある。リトライは実際にロックを掛けて確かめる
+- [ ] internal-05: INSTANT の境界の具体例（`ADD COLUMN NULL` は可、型を縮める `MODIFY COLUMN` は不可）
+- [ ] internal-08: 読み切替は「新カラムが空なら旧カラムへ倒す」形にすると、フラグの展開とバックフィルの順序に依存しなくなる
