@@ -1,0 +1,38 @@
+// Package admin は admin リスナー（:8092、社内オペレータ）のハンドラ。
+// 呼び出し主体ごとにリスナーを分けるのは、要求するAAL・レート制限・監査・到達経路が異なるため
+// （conventions/api-design.md §3.2）。パスプレフィックスによる分離は採らない。
+
+package admin
+
+import (
+	"github.com/rikukaInoue/greenfield/core/authz"
+	"github.com/rikukaInoue/greenfield/core/httpapi"
+)
+
+// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
+// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+type Deps struct {
+	Authorizer authz.Authorizer
+	Lister     authz.Lister
+	Assurance  authz.AssuranceChecker
+}
+
+type handlers struct {
+	deps Deps
+}
+
+// Register は admin リスナーのルートを登録する。
+// コマンドはユースケース単位（:verb / 名詞サブリソース）、クエリは Read Model 単位の GET とし、
+// OperationID は対応する usecase 名に一致させる（生成クライアントのメソッド名になる）。
+//
+//	huma.Register(api.Huma, huma.Operation{
+//		OperationID: "CreateThing",
+//		Method:      http.MethodPost,
+//		Path:        "/things",
+//		Summary:     "…",
+//		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
+//	}, createThing)
+func Register(api httpapi.API, deps Deps) {
+	h := &handlers{deps: deps}
+	_, _ = api, h // ルートを登録するまでは何もしない
+}

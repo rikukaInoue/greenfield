@@ -1,0 +1,5 @@
+# db/（sqlc の入力）
+
+- `schema.sql`: マイグレーション（expand + contract）全適用後の `mysqldump --no-data`。**手書きしない**。`mise run schema:dump` で更新し、CI は `mise run schema:check` で一致を検証する
+- `queries/repository/*.sql`（コマンド側: Entity の復元・保存）と `queries/readmodel/*.sql`（読み側: Read Model）: sqlc のクエリ。参照できるのは自ドメイン（gear）のテーブルのみ。他ドメインは `<name>-client` 経由の HTTP か ReplicaView
+- 生成先はそれぞれ `repository/internal/sqlcgen` / `readmodel/internal/sqlcgen`（Go の internal 規則でその層の外から import 不可）。`mise run sqlc` で再生成

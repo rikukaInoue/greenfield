@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/go-sql-driver/mysql v1.10.1
-	github.com/rikukaInoue/greenfield/core v0.0.0-00010101000000-000000000000
+	github.com/rikukaInoue/greenfield/core v0.0.0
 	github.com/rikukaInoue/greenfield/services/photo v0.0.0
 )
 
@@ -49,6 +49,7 @@ require (
 	github.com/open-feature/flagd/core v0.17.0 // indirect
 	github.com/open-feature/go-sdk v1.19.0 // indirect
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.7.0 // indirect
+	github.com/rikukaInoue/greenfield/services/gear v0.0.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -72,3 +73,5 @@ require (
 replace github.com/rikukaInoue/greenfield/core => ../core
 
 replace github.com/rikukaInoue/greenfield/services/photo => ../services/photo
+
+replace github.com/rikukaInoue/greenfield/services/gear => ../services/gear

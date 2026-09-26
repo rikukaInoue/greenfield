@@ -40,7 +40,7 @@ env_prefix=$(echo "$svc" | tr '[:lower:]' '[:upper:]')
 
 dump=$(mysqldump_root --no-data --skip-comments --compact \
   --ignore-table="$scratch.${svc}_migrations_expand" --ignore-table="$scratch.${svc}_migrations_contract" "$scratch" \
-  | grep -v '^/\*!' | sed -E 's/ AUTO_INCREMENT=[0-9]+//')
+  | { grep -v '^/\*!' || true; } | sed -E 's/ AUTO_INCREMENT=[0-9]+//')
 header="-- 生成物。手で編集しない。更新: dev/scripts/schema-dump.sh $svc --write（マイグレーション全適用後の mysqldump --no-data）"
 out="$header"$'\n'"$dump"
 
@@ -50,7 +50,7 @@ case "$mode" in
   --check-live)
     live=$(mysqldump_root --no-data --skip-comments --compact \
       --ignore-table="${svc}.${svc}_migrations_expand" --ignore-table="${svc}.${svc}_migrations_contract" "$svc" \
-      | grep -v '^/\*!' | sed -E 's/ AUTO_INCREMENT=[0-9]+//')
+      | { grep -v '^/\*!' || true; } | sed -E 's/ AUTO_INCREMENT=[0-9]+//')
     if diff -u "$target" <(printf '%s\n%s\n' "$header" "$live"); then
       echo "実行時の DB は schema.sql と一致している (${svc})"
     else
