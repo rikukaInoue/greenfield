@@ -11,14 +11,17 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
-import { requestIdContext, viewerContext } from "./context";
+import { flagsContext, requestIdContext, viewerContext } from "./context";
+import { evaluateFlags } from "./.server/flags";
 import { sessionStorage } from "./.server/session";
 import "./app.css";
 
 const sessionMiddleware: Route.MiddlewareFunction = async ({ request, context }, next) => {
   const session = await sessionStorage.getSession(request.headers.get("Cookie"));
   const subject = session.get("subject");
-  context.set(viewerContext, subject ? { subject, aal: session.get("aal") ?? 1 } : null);
+  const viewer = subject ? { subject, aal: session.get("aal") ?? 1 } : null;
+  context.set(viewerContext, viewer);
+  context.set(flagsContext, await evaluateFlags(viewer));
   context.set(requestIdContext, request.headers.get("X-Request-Id") ?? crypto.randomUUID());
   return next();
 };
