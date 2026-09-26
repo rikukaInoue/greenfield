@@ -1,7 +1,5 @@
 package authz
 
-// タプルのsubject/object表記は文字列連結を各所に書かず、ここに集約する。
-
 // UserRef は user:<sub> 形式のsubject表記を返す。
 func UserRef(subject string) string { return "user:" + subject }
 

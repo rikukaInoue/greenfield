@@ -33,6 +33,14 @@ func (q *Queries) CreatePhoto(ctx context.Context, arg CreatePhotoParams) (sql.R
 	)
 }
 
+const deletePhotosByOwner = `-- name: DeletePhotosByOwner :execresult
+DELETE FROM photos WHERE owner_subject = ?
+`
+
+func (q *Queries) DeletePhotosByOwner(ctx context.Context, ownerSubject string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deletePhotosByOwner, ownerSubject)
+}
+
 const getPhotoForUpdate = `-- name: GetPhotoForUpdate :one
 SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at FROM photos WHERE id = ? FOR UPDATE
 `
@@ -50,4 +58,25 @@ func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, erro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updatePhoto = `-- name: UpdatePhoto :exec
+UPDATE photos SET caption = ?, visibility = ?, gear_item_id = ? WHERE id = ?
+`
+
+type UpdatePhotoParams struct {
+	Caption    string
+	Visibility PhotosVisibility
+	GearItemID sql.NullInt64
+	ID         uint64
+}
+
+func (q *Queries) UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) error {
+	_, err := q.db.ExecContext(ctx, updatePhoto,
+		arg.Caption,
+		arg.Visibility,
+		arg.GearItemID,
+		arg.ID,
+	)
+	return err
 }

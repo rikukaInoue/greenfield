@@ -1,9 +1,5 @@
 // Package devtoken はローカル開発・CI用の擬似トークンを組み立て・解読する。
-//
-// 本番のOP（Keycloak）が発行するJWTの代わりに、署名検証を伴わない自己記述トークンを使う。
-// 目的は「認証ミドルウェアとPrincipal伝播を全経路で有効にしたまま、OP稼働前に開発を回す」ことであり、
-// 素通しの直叩きを作らないための最小の仕掛けである（conventions/internal-04）。
-// 本番での利用は staticauthn の起動時ガードが拒否する。
+// 署名検証はしない。本番での利用は staticauthn の起動時ガードが拒否する。
 package devtoken
 
 import (
@@ -17,10 +13,10 @@ import (
 	"github.com/rikukaInoue/greenfield/core/authz"
 )
 
-// Prefix は擬似トークンの目印。実トークン（JWT）と取り違えないための接頭辞。
+// Prefix は実トークン（JWT）と取り違えないための接頭辞。
 const Prefix = "dev."
 
-// Claims は擬似トークンの中身。本番JWTのクレームに対応させ、語彙を先に固定する。
+// Claims は擬似トークンの中身。本番 JWT のクレームに対応させてある。
 type Claims struct {
 	Subject  string   `json:"sub"`
 	ClientID string   `json:"client_id,omitempty"`

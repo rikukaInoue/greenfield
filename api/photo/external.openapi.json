@@ -372,6 +372,16 @@
               "minimum": 1,
               "type": "integer"
             }
+          },
+          {
+            "description": "作成直後でも確実に見えるよう、認可判定の鮮度を上げる",
+            "explode": false,
+            "in": "query",
+            "name": "fresh",
+            "schema": {
+              "description": "作成直後でも確実に見えるよう、認可判定の鮮度を上げる",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -444,7 +454,7 @@
     },
     "/photos/{id}:publish": {
       "post": {
-        "description": "純粋な状態遷移のため :verb（実体を生む操作は名詞のサブリソースにする）。",
+        "description": "純粋な状態遷移のため :verb を使う。",
         "operationId": "PublishPhoto",
         "parameters": [
           {

@@ -1,6 +1,4 @@
-// Package admin は admin リスナー（:8082、社内オペレータ）のハンドラ。
-// 呼び出し主体ごとにリスナーを分けるのは、要求するAAL・レート制限・監査・到達経路が異なるため
-// （conventions/api-design.md §3.2）。パスプレフィックスによる分離は採らない。
+// Package admin は admin リスナー（社内オペレータ）のハンドラ。
 package admin
 
 import (
@@ -12,11 +10,13 @@ import (
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/core/problem"
+	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 )
 
-// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
-// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+// Deps はハンドラが使う依存。実装は app/ が注入する。
 type Deps struct {
+	Commands  *usecase.PhotoCommands
+	Queries   *usecase.PhotoQueries
 	Assurance authz.AssuranceChecker
 }
 
@@ -25,7 +25,6 @@ type handlers struct {
 }
 
 // Register は admin リスナーのルートを登録する。
-// オペレータの権限は専用機構を作らず ReBAC（platform operator）に載せる（docs/03-platform.md）。
 func Register(api httpapi.API, deps Deps) {
 	h := &handlers{deps: deps}
 
@@ -34,7 +33,7 @@ func Register(api httpapi.API, deps Deps) {
 		Method:      http.MethodGet,
 		Path:        "/photos",
 		Summary:     "全ユーザーの写真一覧（オペレータ）",
-		Description: "platform operator の権限で列挙する。専用機構ではなく ReBAC で解決する。",
+		Description: "platform operator の権限で列挙する。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, h.adminListPhotos)
@@ -61,8 +60,8 @@ type AdminListPhotosOutput struct {
 	}
 }
 
-// AdminPhoto は管理用の写真表現。external の Photo とは別型とし、
-// 管理APIのフィールドが外部公開のクライアントへ漏れない形にする（生成クライアントもパッケージが分かれる）。
+// AdminPhoto は管理用の写真表現。external の Photo とは別型にして、
+// 管理APIのフィールドが外部公開のクライアントへ混ざらないようにする。
 type AdminPhoto struct {
 	ID         int64  `json:"id" example:"1" doc:"写真ID"`
 	OwnerID    string `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
@@ -82,14 +81,50 @@ type AdminDeleteAccountOutput struct {
 }
 
 func (h *handlers) adminListPhotos(ctx context.Context, in *AdminListPhotosInput) (*AdminListPhotosOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "AdminListPhotos は Phase 1.2 で実装する")
+	// オペレータ権限は専用機構ではなく platform operator のタプルで判定する。
+	if err := h.requireOperator(ctx); err != nil {
+		return nil, err
+	}
+	views, err := h.deps.Queries.ListForOperator(ctx, in.OwnerID, in.Limit)
+	if err != nil {
+		return nil, problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
+	}
+	out := &AdminListPhotosOutput{}
+	out.Body.Photos = make([]AdminPhoto, 0, len(views))
+	for _, v := range views {
+		out.Body.Photos = append(out.Body.Photos, AdminPhoto{
+			ID: v.ID, OwnerID: v.OwnerID, Caption: v.Caption,
+			Visibility: v.Visibility, CreatedAt: v.CreatedAt,
+		})
+	}
+	return out, nil
 }
 
 func (h *handlers) adminDeleteAccount(ctx context.Context, in *AdminDeleteAccountInput) (*AdminDeleteAccountOutput, error) {
-	// 保証レベルの要求はミドルウェアのパスマッピングではなくハンドラに明示する
-	// （パス設計の変更で認可が静かに壊れる事故を避けるため。conventions/internal-04）。
+	// 保証レベルの要求はミドルウェアのパスマッピングではなくハンドラに明示する。
 	if err := h.deps.Assurance.RequireAAL(ctx, authz.AAL2); err != nil {
 		return nil, err
 	}
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "AdminDeleteAccount は Phase 5 で実装する")
+	if err := h.requireOperator(ctx); err != nil {
+		return nil, err
+	}
+	n, err := h.deps.Commands.DeleteByOwner(ctx, in.Subject)
+	if err != nil {
+		return nil, problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
+	}
+	out := &AdminDeleteAccountOutput{}
+	out.Body.DeletedPhotos = n
+	return out, nil
+}
+
+// requireOperator は platform operator のタプルを持つ主体だけを通す。
+func (h *handlers) requireOperator(ctx context.Context) error {
+	res, err := h.deps.Queries.CanOperate(ctx)
+	if err != nil {
+		return problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
+	}
+	if !res {
+		return problem.New(http.StatusForbidden, problem.CodeForbidden, "オペレータ権限が必要")
+	}
+	return nil
 }

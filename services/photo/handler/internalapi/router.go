@@ -1,27 +1,22 @@
-// Package internalapi は internal リスナー（:8081、サービス間（client_credentials）。プライベートネットワークのみ）のハンドラ。
-// 呼び出し主体ごとにリスナーを分けるのは、要求するAAL・レート制限・監査・到達経路が異なるため
-// （conventions/api-design.md §3.2）。パスプレフィックスによる分離は採らない。
-// ディレクトリ名を internal にしないのは、Goの internal パッケージ規則（親配下からしかimport不可）と衝突し
-// app/ から配線できなくなるため（規約 internal-01 の handler/internal/ からの意図的な逸脱）。
+// Package internalapi は internal リスナー（サービス間）のハンドラ。
+// パッケージ名が internalapi なのは Go の internal 規則を避けるため（docs/adr/0002-handler-internalapi.md）。
 package internalapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/core/problem"
+	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 )
 
-// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
-// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+// Deps はハンドラが使う依存。実装は app/ が注入する。
 type Deps struct {
-	Authorizer authz.Authorizer
-	Lister     authz.Lister
-	Assurance  authz.AssuranceChecker
+	Queries *usecase.PhotoQueries
 }
 
 type handlers struct {
@@ -29,7 +24,6 @@ type handlers struct {
 }
 
 // Register は internal リスナーのルートを登録する。
-// 「プライベートだから無認証」は採らない: scope 付きの client_credentials を要求する（#27）。
 func Register(api httpapi.API, deps Deps) {
 	h := &handlers{deps: deps}
 
@@ -48,13 +42,13 @@ func Register(api httpapi.API, deps Deps) {
 		Method:      http.MethodGet,
 		Path:        "/gear-items/{gear_item_id}/photos",
 		Summary:     "機材に紐づく作例の一覧（サービス間）",
-		Description: "一覧の行ごとに相手を呼ぶ形（HTTP越しのN+1）を避けるためのBatch取得API。",
+		Description: "呼び出し側の N+1 を避けるための Batch 取得API。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, h.listPhotosByGearItem)
 }
 
-// ServicePhoto はサービス間で公開する写真の表現。相手のテーブル構造ではなくこの契約に依存させる。
+// ServicePhoto はサービス間で公開する写真の表現。
 type ServicePhoto struct {
 	ID         int64  `json:"id" example:"1" doc:"写真ID"`
 	OwnerID    string `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
@@ -83,9 +77,36 @@ type ListPhotosByGearItemOutput struct {
 }
 
 func (h *handlers) getPhotoForService(ctx context.Context, in *GetPhotoForServiceInput) (*GetPhotoForServiceOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "GetPhotoForService は Phase 4.1 で実装する")
+	v, err := h.deps.Queries.PublicDetail(ctx, in.ID)
+	if err != nil {
+		return nil, notFoundOrInternal(err)
+	}
+	return &GetPhotoForServiceOutput{Body: servicePhoto(v)}, nil
 }
 
 func (h *handlers) listPhotosByGearItem(ctx context.Context, in *ListPhotosByGearItemInput) (*ListPhotosByGearItemOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "ListPhotosByGearItem は Phase 4.1 で実装する")
+	views, err := h.deps.Queries.PublicByGearItem(ctx, in.GearItemID, in.Limit)
+	if err != nil {
+		return nil, notFoundOrInternal(err)
+	}
+	out := &ListPhotosByGearItemOutput{}
+	out.Body.Photos = make([]ServicePhoto, 0, len(views))
+	for _, v := range views {
+		out.Body.Photos = append(out.Body.Photos, servicePhoto(v))
+	}
+	return out, nil
+}
+
+func servicePhoto(v usecase.PhotoView) ServicePhoto {
+	return ServicePhoto{
+		ID: v.ID, OwnerID: v.OwnerID, Caption: v.Caption,
+		GearItemID: v.GearItemID, CreatedAt: v.CreatedAt,
+	}
+}
+
+func notFoundOrInternal(err error) error {
+	if errors.Is(err, usecase.ErrNotFound) {
+		return problem.New(http.StatusNotFound, "photo.not_found", "写真が見つからない")
+	}
+	return problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
 }

@@ -257,7 +257,7 @@
     },
     "/photos": {
       "get": {
-        "description": "platform operator の権限で列挙する。専用機構ではなく ReBAC で解決する。",
+        "description": "platform operator の権限で列挙する。",
         "operationId": "AdminListPhotos",
         "parameters": [
           {

@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 )
 
@@ -31,6 +32,43 @@ func (q *Queries) GetPhotoDetail(ctx context.Context, id uint64) (Photo, error) 
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listPhotos = `-- name: ListPhotos :many
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at
+FROM photos ORDER BY created_at DESC LIMIT ?
+`
+
+// オペレータ向けの全件一覧
+func (q *Queries) ListPhotos(ctx context.Context, limit int32) ([]Photo, error) {
+	rows, err := q.db.QueryContext(ctx, listPhotos, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Photo{}
+	for rows.Next() {
+		var i Photo
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerSubject,
+			&i.Caption,
+			&i.Visibility,
+			&i.GearItemID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPhotosByIDs = `-- name: ListPhotosByIDs :many
@@ -92,6 +130,47 @@ type ListPhotosByOwnerParams struct {
 
 func (q *Queries) ListPhotosByOwner(ctx context.Context, arg ListPhotosByOwnerParams) ([]Photo, error) {
 	rows, err := q.db.QueryContext(ctx, listPhotosByOwner, arg.OwnerSubject, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Photo{}
+	for rows.Next() {
+		var i Photo
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerSubject,
+			&i.Caption,
+			&i.Visibility,
+			&i.GearItemID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicPhotosByGearItem = `-- name: ListPublicPhotosByGearItem :many
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at
+FROM photos WHERE gear_item_id = ? AND visibility = 'public' ORDER BY created_at DESC LIMIT ?
+`
+
+type ListPublicPhotosByGearItemParams struct {
+	GearItemID sql.NullInt64
+	Limit      int32
+}
+
+func (q *Queries) ListPublicPhotosByGearItem(ctx context.Context, arg ListPublicPhotosByGearItemParams) ([]Photo, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicPhotosByGearItem, arg.GearItemID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

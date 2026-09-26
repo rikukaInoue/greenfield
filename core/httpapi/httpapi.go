@@ -1,11 +1,5 @@
-// Package httpapi はリスナー（external / admin / internal）ごとの huma API の組み立てを共通化する。
-//
-// ルータは chi を使う。規約（conventions/api-design.md §3.1）は Echo + humaecho を指定しているが、
-// Echo のパスパラメータ構文（:id）は同じ規約が定める `:verb`（AIP-136 のカスタムメソッド、
-// 例 POST /photos/{id}:publish）と衝突し、パスパラメータが取れなくなる（v4 / v5 とも 422）。
-// 両立しないため、API設計の中核である `:verb` を採り、ルータを chi に替えた。→ 還流事項。
-// アプリが知るのは Listen するポートだけであり、TLS・ホスト名・到達制御はインフラの持ち物。
-// CORS は全リスナーで閉じる（ブラウザからの直接経路は台帳登録された例外のみ。conventions/external-03）。
+// Package httpapi はリスナーごとの huma API を組み立てる。
+// ルータは chi（docs/adr/0001-router-chi.md）。CORS は開けない。
 package httpapi
 
 import (
@@ -22,20 +16,18 @@ import (
 )
 
 // Listener は呼び出し主体ごとのリスナー種別。
-// 要求するAAL・レート制限・監査・到達経路が異なるため3系統に分ける（conventions/api-design.md §3.2）。
-// パスプレフィックスによる分離は、入口の設定ミス一つで別系統が露出するため採らない。
 type Listener string
 
 const (
-	External Listener = "external" // 一般ユーザー（Authorization Code + PKCE）
+	External Listener = "external" // 一般ユーザー
 	Admin    Listener = "admin"    // 社内オペレータ
-	Internal Listener = "internal" // サービス間（client_credentials）。プライベートドメインのみ
+	Internal Listener = "internal" // サービス間
 )
 
-// Listeners は OpenAPI 出力順を固定するための一覧。
+// Listeners は OpenAPI の出力順を固定するための一覧。
 var Listeners = []Listener{External, Admin, Internal}
 
-// API はリスナー1つ分の huma API と、その HTTP ハンドラ。
+// API はリスナー1つ分の huma API と HTTP ハンドラ。
 type API struct {
 	Listener Listener
 	Huma     huma.API
@@ -47,21 +39,19 @@ type Options struct {
 	Service string // サービス名（例: photo）。OpenAPI の title に使う
 	Version string // API バージョン（例: 1.0.0）
 
-	// Authenticator は認証ミドルウェアの提供元。**internal を含む全リスナーに適用する**。
-	// 「プライベートネットワークだから無認証」は試作でも採らない（#27）。
+	// Authenticator は認証ミドルウェアの提供元。internal を含む全リスナーに適用する。
 	Authenticator authz.Authenticator
 
 	// RequireScope が空でなければ、そのスコープを持たない Principal を 403 で弾く。
-	// internal リスナーに `internal:<service>` を要求するために使う。
 	RequireScope string
 
-	// Middlewares は認証の後に適用する net/http 形式のミドルウェア。
+	// Middlewares は認証の後に適用する。
 	Middlewares []func(http.Handler) http.Handler
 }
 
 // New はリスナー1つ分の API を作る。ルートの登録は呼び出し側が huma.Register で行う。
 func New(l Listener, o Options) API {
-	problem.Install() // huma が生成するエラーも code 付きにする（Register より前）
+	problem.Install() // huma が生成するエラーにも code を載せる。Register より前に呼ぶ
 
 	r := chi.NewMux()
 	if o.Authenticator != nil {
@@ -75,17 +65,16 @@ func New(l Listener, o Options) API {
 	}
 
 	cfg := huma.DefaultConfig(fmt.Sprintf("%s %s API", o.Service, l), o.Version)
-	// スペックとドキュメントはアプリから配らない（api/ にコミットした生成物が唯一の契約置き場）。
+	// スペックとドキュメントはアプリから配らない。api/ の生成物が唯一の契約置き場
 	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
-	// SchemasPath を切ったので、応答に `$schema` と Link ヘッダを付ける変換器も外す
-	// （解決しないURLを広告しないため）。
+	// SchemasPath を切ったので $schema / Link ヘッダの変換器も外す（解決しないURLになる）
 	cfg.Transformers = nil
 	cfg.CreateHooks = nil
 	cfg.Info.Description = description(o.Service, l)
 
 	api := humachi.New(r, cfg)
 
-	// ヘルスチェックは契約に載せない（OpenAPI から隠す）。
+	// ヘルスチェックは契約に載せない
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
@@ -107,7 +96,6 @@ func description(service string, l Listener) string {
 }
 
 // requireScope は Principal が scope を持たなければ 403 を返す。
-// 認証（誰か）を通っても、そのトークンにこのAPIを呼ぶ権限がなければ入れない。
 func requireScope(scope string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

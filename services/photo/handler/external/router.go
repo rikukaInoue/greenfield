@@ -1,25 +1,26 @@
-// Package external は external リスナー（:8080、一般ユーザー（Authorization Code + PKCE））のハンドラ。
-// 呼び出し主体ごとにリスナーを分けるのは、要求するAAL・レート制限・監査・到達経路が異なるため
-// （conventions/api-design.md §3.2）。パスプレフィックスによる分離は採らない。
+// Package external は external リスナー（一般ユーザー）のハンドラ。
 package external
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/core/problem"
+	"github.com/rikukaInoue/greenfield/services/photo/domain"
+	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 )
 
-// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
-// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+// Deps はハンドラが使う依存。実装は app/ が注入する。
 type Deps struct {
-	Authorizer authz.Authorizer
-	Lister     authz.Lister
-	Assurance  authz.AssuranceChecker
+	Commands  *usecase.PhotoCommands
+	Queries   *usecase.PhotoQueries
+	Assurance authz.AssuranceChecker
 }
 
 type handlers struct {
@@ -27,8 +28,6 @@ type handlers struct {
 }
 
 // Register は external リスナーのルートを登録する。
-// エンドポイントは CQS をそのまま反映する: コマンドはユースケース単位（:verb / 名詞サブリソース）、
-// クエリは Read Model 単位の GET。OperationID は対応する usecase 名と一致させる（生成クライアントのメソッド名になる）。
 func Register(api httpapi.API, deps Deps) {
 	h := &handlers{deps: deps}
 
@@ -46,7 +45,7 @@ func Register(api httpapi.API, deps Deps) {
 		Method:      http.MethodPost,
 		Path:        "/photos/{id}:publish",
 		Summary:     "写真を公開する",
-		Description: "純粋な状態遷移のため :verb（実体を生む操作は名詞のサブリソースにする）。",
+		Description: "純粋な状態遷移のため :verb を使う。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
 	}, h.publishPhoto)
@@ -71,7 +70,7 @@ func Register(api httpapi.API, deps Deps) {
 	}, h.listPhotos)
 }
 
-// Photo は写真の表現（Read Model → 応答 DTO）。
+// Photo は写真の応答表現。
 type Photo struct {
 	ID         int64   `json:"id" example:"1" doc:"写真ID"`
 	OwnerID    string  `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
@@ -82,8 +81,7 @@ type Photo struct {
 	CreatedAt  string  `json:"created_at" format:"date-time" doc:"投稿時刻"`
 }
 
-// CreatePhotoInput はコマンドの入力。形式的な入力検証は huma の入力型が担う
-// （業務上の不変条件・状態遷移は Entity が保証する）。
+// CreatePhotoInput は投稿コマンドの入力。形式的な検証はこの型が担う。
 type CreatePhotoInput struct {
 	Body struct {
 		Caption    string `json:"caption" maxLength:"1000" doc:"キャプション"`
@@ -93,8 +91,7 @@ type CreatePhotoInput struct {
 }
 
 type CreatePhotoOutput struct {
-	Status int
-	Body   Photo
+	Body Photo
 }
 
 type PublishPhotoInput struct {
@@ -106,7 +103,8 @@ type PublishPhotoOutput struct {
 }
 
 type GetPhotoDetailInput struct {
-	ID int64 `path:"id" minimum:"1" doc:"写真ID"`
+	ID    int64 `path:"id" minimum:"1" doc:"写真ID"`
+	Fresh bool  `query:"fresh,omitempty" doc:"作成直後でも確実に見えるよう、認可判定の鮮度を上げる"`
 }
 
 type GetPhotoDetailOutput struct {
@@ -124,22 +122,93 @@ type ListPhotosOutput struct {
 	}
 }
 
-// 以下のハンドラは 0.4 時点では契約（OpenAPI）を確定させるための骨格であり、
-// 実装は Phase 1（1.1 Atomic / 1.2 CQS / 1.3 認可呼び出し）で入れる。
-// usecase を呼ぶ形（handler → usecase → Entity）は最初から固定しておく。
-
 func (h *handlers) createPhoto(ctx context.Context, in *CreatePhotoInput) (*CreatePhotoOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "CreatePhoto は Phase 1.1 で実装する")
+	photo, err := h.deps.Commands.Create(ctx, usecase.CreatePhotoInput{
+		Caption:    in.Body.Caption,
+		Visibility: in.Body.Visibility,
+		GearItemID: in.Body.GearItemID,
+	})
+	if err != nil {
+		return nil, toHTTP(err)
+	}
+	return &CreatePhotoOutput{Body: fromEntity(photo)}, nil
 }
 
 func (h *handlers) publishPhoto(ctx context.Context, in *PublishPhotoInput) (*PublishPhotoOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "PublishPhoto は Phase 1.1 で実装する")
+	photo, err := h.deps.Commands.Publish(ctx, domain.PhotoID(in.ID))
+	if err != nil {
+		return nil, toHTTP(err)
+	}
+	return &PublishPhotoOutput{Body: fromEntity(photo)}, nil
 }
 
 func (h *handlers) getPhotoDetail(ctx context.Context, in *GetPhotoDetailInput) (*GetPhotoDetailOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "GetPhotoDetail は Phase 1.2 で実装する")
+	consistency := authz.ConsistencyDefault
+	if in.Fresh {
+		consistency = authz.ConsistencyHigher
+	}
+	v, err := h.deps.Queries.Detail(ctx, domain.PhotoID(in.ID), consistency)
+	if err != nil {
+		return nil, toHTTP(err)
+	}
+	return &GetPhotoDetailOutput{Body: fromView(v)}, nil
 }
 
 func (h *handlers) listPhotos(ctx context.Context, in *ListPhotosInput) (*ListPhotosOutput, error) {
-	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "ListPhotos は Phase 1.2 で実装する")
+	views, err := h.deps.Queries.List(ctx, in.Limit)
+	if err != nil {
+		return nil, toHTTP(err)
+	}
+	out := &ListPhotosOutput{}
+	out.Body.Photos = make([]Photo, 0, len(views))
+	for _, v := range views {
+		if in.Visibility != "" && v.Visibility != in.Visibility {
+			continue
+		}
+		out.Body.Photos = append(out.Body.Photos, fromView(v))
+	}
+	return out, nil
+}
+
+func fromEntity(p *domain.Photo) Photo {
+	out := Photo{
+		ID:         int64(p.ID()),
+		OwnerID:    p.OwnerSubject(),
+		Caption:    string(p.Caption()),
+		Visibility: string(p.Visibility()),
+		GearItemID: p.GearItemID(),
+	}
+	if !p.CreatedAt().IsZero() {
+		out.CreatedAt = p.CreatedAt().UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
+func fromView(v usecase.PhotoView) Photo {
+	return Photo{
+		ID:         v.ID,
+		OwnerID:    v.OwnerID,
+		Caption:    v.Caption,
+		Visibility: v.Visibility,
+		GearItemID: v.GearItemID,
+		CreatedAt:  v.CreatedAt,
+	}
+}
+
+// toHTTP はドメイン・ユースケースのエラーを problem+json へ対応づける。
+func toHTTP(err error) error {
+	switch {
+	case errors.Is(err, usecase.ErrNotFound):
+		return problem.New(http.StatusNotFound, "photo.not_found", "写真が見つからない")
+	case errors.Is(err, usecase.ErrForbidden):
+		return problem.New(http.StatusForbidden, problem.CodeForbidden, "権限がない")
+	case errors.Is(err, domain.ErrAlreadyPublished):
+		return problem.New(http.StatusConflict, "photo.already_published", "すでに公開済み")
+	case errors.Is(err, domain.ErrInvalid):
+		return problem.New(http.StatusUnprocessableEntity, problem.CodeValidationFailed, err.Error())
+	case errors.Is(err, usecase.ErrInjectedFault):
+		return problem.New(http.StatusInternalServerError, "photo.injected_fault", "注入された失敗")
+	default:
+		return problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
+	}
 }

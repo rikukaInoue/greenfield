@@ -6,3 +6,9 @@ VALUES (?, ?, ?, ?);
 
 -- name: GetPhotoForUpdate :one
 SELECT * FROM photos WHERE id = ? FOR UPDATE;
+
+-- name: UpdatePhoto :exec
+UPDATE photos SET caption = ?, visibility = ?, gear_item_id = ? WHERE id = ?;
+
+-- name: DeletePhotosByOwner :execresult
+DELETE FROM photos WHERE owner_subject = ?;

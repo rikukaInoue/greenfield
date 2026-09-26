@@ -1,6 +1,5 @@
-// Package simpleassurance は Principal の AAL を突き合わせるだけの AssuranceChecker。
-// ステップアップの実フロー検証（#12）は任意課題であり、ここでは呼び出し語彙
-// （RequireAAL / Require）と RFC 9470 の応答形だけを固定する（docs/03-platform.md）。
+// Package simpleassurance は Principal の AAL を突き合わせるだけの AssuranceChecker を提供する。
+// 不足時の応答は RFC 9470 に従う。
 package simpleassurance
 
 import (
@@ -13,19 +12,19 @@ import (
 	"github.com/rikukaInoue/greenfield/core/problem"
 )
 
-// Checker は authz.AssuranceChecker の簡易実装。
+// Checker は AAL を突き合わせる AssuranceChecker。
 type Checker struct{}
 
 // New は Checker を返す。
 func New() *Checker { return &Checker{} }
 
-// RequireAAL は Principal の AAL が要求水準に満たなければ、RFC 9470 の 401 を返す。
+// RequireAAL は AAL が要求水準に満たなければエラーを返す。
 func (c *Checker) RequireAAL(ctx context.Context, level authz.AAL) error {
 	return c.Require(ctx, authz.Assurance{AAL: level})
 }
 
-// Require は保証レベルを検査する。不足時のエラーは、ハンドラがそのまま返せば
-// 401 + WWW-Authenticate（insufficient_user_authentication）になる。
+// Require は保証レベルを検査する。返したエラーをハンドラがそのまま返すと
+// 401 + WWW-Authenticate になる。
 func (c *Checker) Require(ctx context.Context, a authz.Assurance) error {
 	p, ok := authz.PrincipalFrom(ctx)
 	if !ok {
@@ -40,7 +39,7 @@ func (c *Checker) Require(ctx context.Context, a authz.Assurance) error {
 	return nil
 }
 
-// insufficient は RFC 9470 の再認証要求。acr_values / max_age をクライアントへ伝える。
+// insufficient は RFC 9470 の再認証要求を組み立てる。
 func insufficient(a authz.Assurance) error {
 	challenge := fmt.Sprintf(`Bearer error="insufficient_user_authentication", acr_values="%s"`, acr(a.AAL))
 	if a.MaxAge > 0 {
@@ -52,7 +51,7 @@ func insufficient(a authz.Assurance) error {
 	return err
 }
 
-// acr は AAL に対応する ACR 値。Keycloak の ACR↔LoA マッピングと揃える（Phase 3.1）。
+// acr は AAL に対応する ACR 値。OP 側の ACR↔LoA マッピングと揃える。
 func acr(l authz.AAL) string {
 	switch l {
 	case authz.AAL2:

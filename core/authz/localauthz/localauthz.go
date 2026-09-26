@@ -1,13 +1,6 @@
-// Package localauthz は擬似ReBACのローカル実装（Authorizer / Lister / RelationWriter）。
-// OpenFGA + authzサービス（Phase 3.2）の差し替え前に、開発の日常で使う。
-//
-// AllowAll で開発すると「認可のあるコードが検証されないまま蓄積し、本番アダプタを差した日に一斉に壊れる」
-// ため、本物らしく厳しい側に寄せる: 所有者タプルがなければ拒否し、ListAccessible は所有物だけを列挙する。
-// タプル書き込みの呼び忘れや ListAccessible の迂回が、開発中に目に見えて壊れる（conventions/internal-04）。
-//
-// 保存先はサービスのDBではなく専用のストア（別 *sql.DB）である。本番の authz サービスと同様に
-// サービスのトランザクションへ参加しないため、「タプルは書けたが業務側がロールバックした」孤児タプルを
-// 再現できる（#6）。driver は cmd 側が注入するため、core は database/sql（標準ライブラリ）にしか依存しない。
+// Package localauthz は擬似ReBAC のローカル実装（Authorizer / Lister / RelationWriter）を提供する。
+// OpenFGA + authzサービスの差し替え前に使う。所有者タプルがなければ拒否する。
+// タプルはサービスDBとは別のストアに置く（docs/adr/0004-localauthz-separate-store.md）。
 package localauthz
 
 import (
@@ -19,54 +12,43 @@ import (
 	"github.com/rikukaInoue/greenfield/core/authz"
 )
 
-// PlatformObject は platform operator を表すタプルの object。FGAモデルの `type platform` に対応する。
+// PlatformObject は platform operator のタプルが指す object。
 const PlatformObject = "platform:main"
 
-// Mapping は action → 必要な relation の対応。
-// 本番では authzサービス内に閉じる知識であり、プロダクトには語彙（action名・resource type名）だけを見せる。
-// ローカル実装でも同じ位置づけで持つ（配線時に cmd から渡す）。
+// Mapping は action から必要な relation への対応。合成ルートが渡す。
 type Mapping map[string]string
 
-// grants は FGAモデルの導出規則を手で解いた表。キーが要求する relation、
-// 値が「その relation を満たす、直接タプルとして保存されうる relation 群」。
-//
-//	type photo
-//	  relations
-//	    define parent: [platform]
-//	    define owner: [user]
-//	    define viewer: owner or operator from parent
-//	    define editor: owner or operator from parent
-//
-// viewer / editor は直接付与せず owner から導出する。加えて platform operator でも満たされる
-// （fromParent を参照）。
+// grants は FGA モデルの導出規則。キーが要求する relation、値がそれを満たす直接タプルの relation。
+// viewer / editor は直接付与せず owner から導出する。
 var grants = map[string][]string{
-	"owner":  {"owner"},
-	"viewer": {"owner"},
-	"editor": {"owner"},
+	"owner":    {"owner"},
+	"viewer":   {"owner"},
+	"editor":   {"owner"},
+	"operator": {"operator"},
+	"support":  {"support"},
 }
 
-// fromParent は `operator from parent` で満たされる relation。
+// fromParent は platform operator でも満たされる relation。
 var fromParent = map[string]bool{"viewer": true, "editor": true}
 
-// Store は擬似ReBACのタプル置き場。
+// Store は擬似ReBAC のタプル置き場。
 type Store struct {
 	db      *sql.DB
 	mapping Mapping
 }
 
-// New は Store を返す。db はサービスのDBとは別の接続（別database）であること。
+// New は Store を返す。db はサービスのDBとは別の接続であること。
 func New(db *sql.DB, m Mapping) *Store {
 	return &Store{db: db, mapping: m}
 }
 
-// Can は認可判定。所有者であるか、platform operator であれば許可する。
-// FGAモデルの `define viewer: owner or operator from parent` を手で解いたもの。
+// Can は所有者であるか、platform operator であれば許可する。
 func (s *Store) Can(ctx context.Context, req authz.Request) (authz.Result, error) {
 	subject := req.Subject
 	if subject == "" {
 		p, ok := authz.PrincipalFrom(ctx)
 		if !ok {
-			return authz.Result{}, nil // 未認証は不許可（認証ミドルウェアが先に401にする）
+			return authz.Result{}, nil // 未認証は不許可。通常は認証ミドルウェアが先に 401 にする
 		}
 		subject = principalRef(p)
 	}
@@ -88,7 +70,6 @@ func (s *Store) Can(ctx context.Context, req authz.Request) (authz.Result, error
 			return authz.Result{Allowed: true}, nil
 		}
 	}
-	// operator from parent: platform operator は配下の全リソースに対して viewer / editor を持つ
 	if fromParent[relation] {
 		op, err := s.has(ctx, subject, "operator", PlatformObject)
 		return authz.Result{Allowed: op}, err
@@ -96,8 +77,7 @@ func (s *Store) Can(ctx context.Context, req authz.Request) (authz.Result, error
 	return authz.Result{}, nil
 }
 
-// ListAccessible はアクセスできるリソースIDを列挙する。一覧は WHERE IN でこの結果を使う
-// （Repositoryで全件取ってからフィルタする逃げ道を作らない）。
+// ListAccessible はアクセスできるリソースIDを列挙する。一覧は WHERE IN でこの結果を使う。
 func (s *Store) ListAccessible(ctx context.Context, action, resourceType string) ([]string, error) {
 	p, ok := authz.PrincipalFrom(ctx)
 	if !ok {
@@ -115,7 +95,7 @@ func (s *Store) ListAccessible(ctx context.Context, action, resourceType string)
 		if err != nil {
 			return nil, err
 		}
-		if op { // platform operator は全件（所有者タプルの存在をもって「リソースがある」と見なす）
+		if op { // 所有者タプルの存在をもってリソースの存在と見なす
 			return s.ids(ctx, "SELECT DISTINCT object FROM relation_tuples WHERE relation = 'owner' AND object LIKE ?", prefix+"%")
 		}
 	}
@@ -131,8 +111,7 @@ func (s *Store) ListAccessible(ctx context.Context, action, resourceType string)
 	return s.ids(ctx, query, args...)
 }
 
-// WriteRelations はタプルを書き込む。同一タプルの重複適用は無害（自然冪等）であり、
-// これは本番 authzサービスの `tuples:write` が保証する性質と同じ（Eventual化への備え）。
+// WriteRelations はタプルを書き込む。同一タプルの重複適用は無害。
 func (s *Store) WriteRelations(ctx context.Context, tuples []authz.Tuple) error {
 	for _, t := range tuples {
 		if _, err := s.db.ExecContext(ctx,

@@ -13,3 +13,12 @@ FROM photos WHERE id IN (sqlc.slice('ids')) ORDER BY created_at DESC;
 -- name: ListPhotosByOwner :many
 SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at
 FROM photos WHERE owner_subject = ? ORDER BY created_at DESC LIMIT ?;
+
+-- name: ListPhotos :many
+-- オペレータ向けの全件一覧
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at
+FROM photos ORDER BY created_at DESC LIMIT ?;
+
+-- name: ListPublicPhotosByGearItem :many
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at
+FROM photos WHERE gear_item_id = ? AND visibility = 'public' ORDER BY created_at DESC LIMIT ?;
