@@ -12,7 +12,7 @@
 
 | # | ステージ | 作るもの | 確かめること | サイズ |
 |---|---|---|---|---|
-| 0.1 | モジュール骨格 | go.work、core/、services/order(+client)、scaffold | #3 越境importがビルド不能 | M |
+| 0.1 | モジュール骨格 | go.work、core/、services/photo(+client)、scaffold | #3 越境importがビルド不能 | M |
 | 0.2 | DB基盤 | mysql:8 compose、ロール/GRANT、golang-migrate二系統+履歴分離、migrateサブコマンド | #1 他DBへのSELECTが権限エラー | M |
 | 0.3 | sqlc+整合CI | sqlc、mysqldump一致検証、テーブル許可リストlint | #2 越境クエリが生成時に落ちる | M |
 | 0.4 | API骨格 | huma 3リスナー、RFC 9457+code、api/出力、oasdiff | 3ポート独立、破壊的変更でCI失敗（#16前半） | M |
@@ -23,7 +23,7 @@
 
 | # | ステージ | 作るもの | 確かめること | サイズ |
 |---|---|---|---|---|
-| 1.1 | Atomic | ctx運搬tx、queries(ctx)、偽Atomic、CreateOrder(Entity) | #4 fn内2Repo+故意エラーで両方ロールバック | M |
+| 1.1 | Atomic | ctx運搬tx、queries(ctx)、偽Atomic、CreatePhoto(Entity) | #4 fn内2Repo+故意エラーで両方ロールバック | M |
 | 1.2 | CQS | Read Model直行の一覧、:verbコマンド | コマンド=Entity経由 / クエリ=tx外の実地 | M |
 | 1.3 | 認可呼び出し固定 | Can/ListAccessible/WriteRelations（localauthz） | #5 失敗注入で注文ごと消える、#6 孤児無害、#7（local版） | M |
 | 1.4 | フラグ | OpenFeature+flagd、入口ミドルウェア→ctx | OFF/ON切替、基盤停止時に安全側 | S |
@@ -37,16 +37,16 @@
 
 ## Phase 2: ★デプロイ分離（GitHub Actions）
 
-分離の証明相手として、scaffoldで空の第2サービス（user骨格）を生成する（scaffoldの初仕事を兼ねる）。
+分離の証明相手として、scaffoldで空の第2サービス（gear骨格）を生成する（scaffoldの初仕事を兼ねる）。
 
 | # | ステージ | 作るもの | 確かめること | サイズ |
 |---|---|---|---|---|
-| 2.1 | 差分検知CI | paths-filterでモジュール単位のbuild/test/migrate検証/lint。依存グラフ発火（core/**→全部、services/order/**→orderのみ、client再生成→利用側） | #22 orderのPRでuserジョブ不実行 / #23 core変更で全発火 | M |
+| 2.1 | 差分検知CI | paths-filterでモジュール単位のbuild/test/migrate検証/lint。依存グラフ発火（core/**→全部、services/photo/**→photoのみ、client再生成→利用側） | #22 photoのPRでgearジョブ不実行 / #23 core変更で全発火 | M |
 | 2.2 | 契約伝播 | api/コミット→oasdiff→client生成→メジャー連動でconsumerへPR | #16 完成形（/v2並行含む） | M |
 | 2.3 | デプロイ順序 | デプロイ先は手元マシンのcompose + self-hosted runner（費用ゼロ。ECSはPhase 7）。`migrate expand → deploy → healthcheck` をジョブグラフで強制 | #24 migrate失敗でデプロイ不開始・無傷 | L |
 | 2.4 | 並列と直列 | concurrency group（同一サービス直列・別サービス並列） | #26 相互に待たない・追い越さない | S |
 
-**出口**: モノレポなのにサービスごとに独立して安全に出る、の実証。最重要成果物その2。1.5系と組み合わせると「orderのオンライン改名の最中にuserを普通にデプロイできる」まで示せる。
+**出口**: モノレポなのにサービスごとに独立して安全に出る、の実証。最重要成果物その2。1.5系と組み合わせると「photoのオンライン改名の最中にgearを普通にデプロイできる」まで示せる。
 
 ## Phase 3: 認証・認可（縮小版）
 
@@ -60,7 +60,7 @@
 
 | # | ステージ | 内容 | 確かめること | サイズ |
 |---|---|---|---|---|
-| 4.1 | サービス間 | user（またはinventory）を実装、client module、M2M+scope、境界での型変換 | 生成→配布→interface受けの一連 | M |
+| 4.1 | サービス間 | gearを実装、client module、M2M+scope、境界での型変換 | 生成→配布→interface受けの一連 | M |
 | 4.2 | Eventual | outbox+relay+SNS/SQS(LocalStack)+inbox | #8 relay停止→回復、#9 重複無害化 | L |
 | 4.3 | ReplicaView | イベント購読→表示用複製、outbox再生 | #10 再構築一致 | M |
 | 4.4 | 同期コマンド | pending状態+冪等キー+回収ジョブ | #11 相手停止→pending→回収で確定 | L |

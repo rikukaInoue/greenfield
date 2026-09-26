@@ -24,3 +24,13 @@ Phase 0〜6 は完全ローカル（クラウド費用ゼロ）、AWS は Phase 
 - **Milestone** = Phase 0〜7
 - **Issue** = ロードマップの各ステージ（`kind:stage`）と検証チェックリストの各項目（`kind:check`）。チェック項目 #N は Issue #N と番号を揃えてある
 - 証跡は `docs/verification-log.md` に追記する
+
+## 開発
+
+```
+mise install                                  # Go（mise.toml）
+make build-ws                                 # ワークスペースで全モジュールをビルド（日常用）
+make build vet test                           # 各モジュールを GOWORK=off で単体検証（CI相当。境界チェックはこちらでしか効かない）
+make run-allinone                             # 全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）
+go run ./dev/scaffold new-service <name>      # 新サービスの骨格を生成（ポートは +10 で採番）
+```
