@@ -86,10 +86,15 @@ jobs:
         run: mise run --quiet s3:up
 
       - name: マイグレーションを適用する
+        # expand → contract の順。contract を流さないと sqlc の入力と実行時のスキーマが食い違う（監査 A-2）
         run: mise run --quiet migrate
 
       - name: db/schema.sql がマイグレーションと一致するか
         run: mise run --quiet schema:check
+
+      - name: 実行時の DB が db/schema.sql と一致するか
+        # schema:check は使い捨てDBとの比較なので、実行時の乖離はこちらでしか検出できない
+        run: mise run --quiet schema:check-live
 
       - name: fmt / build / vet / test / lint / 生成物の一致
         run: mise run --quiet check

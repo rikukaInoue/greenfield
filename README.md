@@ -36,7 +36,8 @@ mise run check               # fmt + build + vet + test を GOWORK=off で並列
 mise run infra:up            # mysql + RustFS + flagd を起動し、バケット作成とマイグレーションまで済ませる
 mise run db:up               # mysql:8.4 のみ（database/ユーザー/GRANT は deploy/compose/mysql/init）
 mise run s3:up               # RustFS のみ（バケットは dev/s3admin が作る）
-mise run migrate             # 各サービスの expand を適用（<name> migrate expand|contract|status）
+mise run migrate             # DB を最新の姿にする（expand → contract）。sqlc の入力と揃える
+#                              デプロイ順序の実演には migrate:expand / migrate:contract を個別に使う
 mise run schema:dump         # マイグレーション全適用後の dump で db/schema.sql（sqlc の入力）を更新
 mise run sqlc                # sqlc generate（生成型は各層の internal/sqlcgen に閉じる）
 mise run api                 # huma の型から api/<service>/<listener>.openapi.json を生成

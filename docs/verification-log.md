@@ -686,3 +686,67 @@ contract の片付けでサブコマンドを削除したのにタスクが残�
    `gracefulShutdown` で SIGTERM を送る形にしてローカルでも CI でも終わるようにした
 3. 計測中、古い SSR プロセスがポートを掴んだまま新しいプロセスが `EADDRINUSE` で起動に失敗し、
    古いビルドを測っていた。ポートで PID を引いて止めるまで気づかなかった
+
+---
+
+## 2026-09-27 — 監査の修正 2: スキーマの二重化（#84）
+
+`docs/audit-2026-09-27.md` の A-2。**sqlc は contract 後のスキーマに対して生成され、
+テストは expand のみの DB に対して走っていた**（生成と実行が別のスキーマを見ていた）。
+
+### 再現
+
+まっさらな DB に `migrate expand` だけを適用した結果と、sqlc の入力を比べた。
+
+| | `caption` 列 |
+|---|---|
+| `db/schema.sql`（sqlc の入力、`schema:check` の基準） | **無い** |
+| `migrate expand` だけを適用した DB（= 当時のローカルと CI） | **ある** |
+
+`mise run migrate` も `infra:up` も CI も `migrate expand` しか流しておらず、
+`photo migrate contract` はどのタスクにも CI にも現れていなかった。
+`dev/scripts/schema-dump.sh` だけが expand + contract を**使い捨ての DB**に適用していたため、
+`schema:check` は通り続け、乖離が見えなかった。
+
+実行時に壊れていなかったのは、sqlc が `SELECT *` を明示的な列リストへ展開しているという偶然に依っていた。
+
+### 直したこと
+
+- `mise run migrate` を **expand → contract** の順で流す形にした。
+  デプロイ順序の実演（Phase 2.3）のために `migrate:expand` / `migrate:contract` は個別タスクとして残す
+  （本番は「expand はデプロイ前、contract は後続リリース」のまま。揃えるのはローカルと CI だけ）
+- `infra:up` も同様
+- **`schema:check-live`** を追加。`schema:check`（使い捨て DB との比較）では実行時の乖離を検出できない
+- CI に `schema:check-live` のステップを追加
+
+### 実測
+
+| 検査 | 結果 |
+|---|---|
+| まっさらな DB に `mise run migrate` | `caption` が消える（contract まで流れる） |
+| `photos` に列を1つ足して `schema:check-live` | **exit 1** + diff（`+ drift_probe int DEFAULT NULL`） |
+| 同じ状態で `schema:check` | **exit 0**（使い捨て DB 比較なので気づけない） |
+
+### 気づき（重要）
+
+**mise の `depends` は並行実行される。** 最初 `migrate` を
+`depends = ["migrate:expand", "migrate:contract"]` と書いたが、contract が expand より先に走り、
+テーブルが無い状態で `DROP COLUMN` しようとして空振りしていた。**タスクは成功と報告する**。
+
+```
+[migrate:contract] $ go run ./services/photo/cmd/photo migrate contract
+[migrate:expand]   $ go run ./services/photo/cmd/photo migrate expand
+```
+
+まっさらな DB で `caption` が残っているのを見て初めて気づいた。順序が要る場合は `run` の配列
+（順に実行される）で書く。これは監査 F-1（`infra:up` が並行 compose で競合する）と同じ原因で、
+**mise の `depends` に順序を期待してはいけない**という一般則。
+
+### 還流
+
+- [ ] `internal-05`: 「sqlc の入力はマイグレーション全適用後の dump」と「expand だけを流す」を
+      同時に採ると、**sqlc が見るスキーマと実行時のスキーマがずれる**。contract キューの消化を
+      CI/CD の経路として明示しないと、この乖離は検査をすり抜ける。
+      検査は「使い捨て DB との一致」と「実行時の DB との一致」の2本が必要
+- [ ] タスクランナーの `depends` が並行実行かどうかを確認する。順序が要る手順を `depends` で
+      並べると、**空振りしたまま成功と報告する**

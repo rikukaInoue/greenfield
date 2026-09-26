@@ -72,6 +72,11 @@ description = "db/schema.sql がマイグレーションと一致しているか
 depends = ["db:up"]
 run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $s) --check || exit 1; done'
 
+[tasks."schema:check-live"]
+description = "実行時の DB が db/schema.sql と一致しているか検証（生成と実行の乖離を検出する）"
+depends = ["db:up"]
+run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $s) --check-live || exit 1; done'
+
 # --- API 契約（huma → OpenAPI → oasdiff） ---
 
 [tasks.api]
@@ -103,7 +108,10 @@ run = ['[ -n "${CI:-}" ] || docker compose up -d --wait rustfs', 'go run ./dev/s
 [tasks."infra:up"]
 description = "ローカル依存を一括起動（mysql + RustFS + flagd + マイグレーション）"
 depends = ["db:up", "s3:up", "flags:up"]
-run = "go run ./services/photo/cmd/photo migrate expand"
+run = [
+  "go run ./services/photo/cmd/photo migrate expand",
+  "go run ./services/photo/cmd/photo migrate contract",
+]
 
 [tasks."db:down"]
 description = "コンテナを停止"
@@ -117,10 +125,25 @@ run = "docker compose down -v && docker compose up -d --wait mysql"
 description = "mysql クライアント（root）に入る"
 run = "docker exec -it greenfield-mysql mysql -uroot -proot"
 
-[tasks.migrate]
-description = "全サービスの expand を適用"
+[tasks."migrate:expand"]
+description = "全サービスの expand を適用（デプロイ前ステップ相当）"
 depends = ["db:up"]
 run = "go run ./services/photo/cmd/photo migrate expand"
+
+[tasks."migrate:contract"]
+description = "全サービスの contract を適用（キュー消化。本番では後続リリースで明示実行する）"
+depends = ["db:up"]
+run = "go run ./services/photo/cmd/photo migrate contract"
+
+[tasks.migrate]
+description = "ローカル・CI の DB を最新の姿にする（expand → contract）。sqlc の入力と一致させるため両方流す"
+depends = ["db:up"]
+# depends は並行実行なので順序を保証できない。contract は expand の後でなければ
+# 対象の列が存在せず空振りする。run の配列は順に実行される
+run = [
+  "go run ./services/photo/cmd/photo migrate expand",
+  "go run ./services/photo/cmd/photo migrate contract",
+]
 
 [tasks."flags:up"]
 description = "フィーチャーフラグ（flagd）を起動する。CI では起動済みとみなす"
