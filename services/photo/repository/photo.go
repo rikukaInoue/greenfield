@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/services/photo/domain"
@@ -39,6 +40,9 @@ func (r *PhotoRepository) Create(ctx context.Context, p *domain.Photo) error {
 		Caption:      string(p.Caption()),
 		Visibility:   sqlcgen.PhotosVisibility(p.Visibility()),
 		GearItemID:   nullInt64(p.GearItemID()),
+		ObjectKey:    nullString(p.ObjectKey()),
+		ContentType:  nullString(p.ContentType()),
+		Status:       sqlcgen.PhotosStatus(p.Status()),
 	})
 	if err != nil {
 		return fmt.Errorf("repository: create photo: %w", err)
@@ -60,23 +64,61 @@ func (r *PhotoRepository) Get(ctx context.Context, id domain.PhotoID) (*domain.P
 	if err != nil {
 		return nil, fmt.Errorf("repository: get photo: %w", err)
 	}
-	return domain.Restore(
-		domain.PhotoID(row.ID), row.OwnerSubject, domain.Caption(row.Caption),
-		domain.Visibility(row.Visibility), fromNullInt64(row.GearItemID), row.CreatedAt,
-	), nil
+	return restore(row), nil
+}
+
+func restore(row sqlcgen.Photo) *domain.Photo {
+	return domain.Restore(domain.Restored{
+		ID:           domain.PhotoID(row.ID),
+		OwnerSubject: row.OwnerSubject,
+		Caption:      domain.Caption(row.Caption),
+		Visibility:   domain.Visibility(row.Visibility),
+		GearItemID:   fromNullInt64(row.GearItemID),
+		ObjectKey:    row.ObjectKey.String,
+		ContentType:  row.ContentType.String,
+		SizeBytes:    fromNullInt64(row.SizeBytes),
+		Status:       domain.Status(row.Status),
+		CreatedAt:    row.CreatedAt,
+	})
 }
 
 // Save は Entity の状態を行へ書き戻す。
 func (r *PhotoRepository) Save(ctx context.Context, p *domain.Photo) error {
 	if err := r.queries(ctx).UpdatePhoto(ctx, sqlcgen.UpdatePhotoParams{
-		Caption:    string(p.Caption()),
-		Visibility: sqlcgen.PhotosVisibility(p.Visibility()),
-		GearItemID: nullInt64(p.GearItemID()),
-		ID:         uint64(p.ID()),
+		Caption:     string(p.Caption()),
+		Visibility:  sqlcgen.PhotosVisibility(p.Visibility()),
+		GearItemID:  nullInt64(p.GearItemID()),
+		ContentType: nullString(p.ContentType()),
+		SizeBytes:   nullInt64(p.SizeBytes()),
+		Status:      sqlcgen.PhotosStatus(p.Status()),
+		ID:          uint64(p.ID()),
 	}); err != nil {
 		return fmt.Errorf("repository: save photo: %w", err)
 	}
 	return nil
+}
+
+// Delete は1件削除する。
+func (r *PhotoRepository) Delete(ctx context.Context, id domain.PhotoID) error {
+	if err := r.queries(ctx).DeletePhoto(ctx, uint64(id)); err != nil {
+		return fmt.Errorf("repository: delete photo: %w", err)
+	}
+	return nil
+}
+
+// ListStalePending はアップロードが完了しないまま放置された写真を古い順に返す。
+func (r *PhotoRepository) ListStalePending(ctx context.Context, before time.Time, limit int) ([]*domain.Photo, error) {
+	rows, err := r.queries(ctx).ListStalePendingPhotos(ctx, sqlcgen.ListStalePendingPhotosParams{
+		CreatedAt: before, Limit: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repository: list stale pending: %w", err)
+	}
+	out := make([]*domain.Photo, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, restore(row))
+	}
+	return out, nil
 }
 
 // DeleteByOwner は所有者の写真を全て削除し、件数を返す。
@@ -90,6 +132,13 @@ func (r *PhotoRepository) DeleteByOwner(ctx context.Context, ownerSubject string
 		return 0, fmt.Errorf("repository: rows affected: %w", err)
 	}
 	return int(n), nil
+}
+
+func nullString(v string) sql.NullString {
+	if v == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: v, Valid: true}
 }
 
 func nullInt64(v *int64) sql.NullInt64 {

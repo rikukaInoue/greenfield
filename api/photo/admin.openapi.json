@@ -61,6 +61,14 @@
             ],
             "type": "string"
           },
+          "status": {
+            "description": "画像のアップロード状態",
+            "enum": [
+              "pending_upload",
+              "ready"
+            ],
+            "type": "string"
+          },
           "visibility": {
             "description": "公開状態",
             "enum": [
@@ -75,6 +83,7 @@
           "owner_id",
           "caption",
           "visibility",
+          "status",
           "created_at"
         ],
         "type": "object"

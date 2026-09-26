@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/services/photo/domain"
@@ -28,18 +29,27 @@ var ErrNotFound = errors.New("photo: 見つからない")
 // ErrForbidden は主体に権限がないことを表す。
 var ErrForbidden = errors.New("photo: 権限がない")
 
+// ErrObjectNotFound は画像オブジェクトが存在しないことを表す。
+var ErrObjectNotFound = errors.New("photo: 画像オブジェクトがない")
+
 // PhotoRepository は Entity の永続化。実装は repository パッケージが持つ。
 type PhotoRepository interface {
 	Create(ctx context.Context, p *domain.Photo) error
 	Get(ctx context.Context, id domain.PhotoID) (*domain.Photo, error)
 	Save(ctx context.Context, p *domain.Photo) error
+	Delete(ctx context.Context, id domain.PhotoID) error
 	DeleteByOwner(ctx context.Context, ownerSubject string) (int, error)
+	ListStalePending(ctx context.Context, before time.Time, limit int) ([]*domain.Photo, error)
 }
+
+// uploadTTL は署名URLの有効期限。
+const uploadTTL = 15 * time.Minute
 
 // PhotoCommands は写真の更新系ユースケース。
 type PhotoCommands struct {
 	atomic     Atomic
 	photos     PhotoRepository
+	images     ImageStore
 	authorizer authz.Authorizer
 	relations  authz.RelationWriter
 	// faults は検証用の失敗注入。本番では常に空。
@@ -47,22 +57,31 @@ type PhotoCommands struct {
 }
 
 // NewPhotoCommands は PhotoCommands を組み立てる。
-func NewPhotoCommands(atomic Atomic, photos PhotoRepository, authorizer authz.Authorizer, relations authz.RelationWriter, faults FaultInjector) *PhotoCommands {
+func NewPhotoCommands(atomic Atomic, photos PhotoRepository, images ImageStore, authorizer authz.Authorizer, relations authz.RelationWriter, faults FaultInjector) *PhotoCommands {
 	if faults == nil {
 		faults = NoFaults{}
 	}
-	return &PhotoCommands{atomic: atomic, photos: photos, authorizer: authorizer, relations: relations, faults: faults}
+	return &PhotoCommands{atomic: atomic, photos: photos, images: images, authorizer: authorizer, relations: relations, faults: faults}
 }
 
 // CreatePhotoInput は投稿の入力。
 type CreatePhotoInput struct {
-	Caption    string
-	Visibility string
-	GearItemID *int64
+	Caption     string
+	Visibility  string
+	GearItemID  *int64
+	ContentType string
 }
 
-// Create は写真を投稿し、所有者タプルを書き込む。両者は同じ Atomic の中で確定する。
-func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*domain.Photo, error) {
+// CreatePhotoResult は投稿の結果。画像は署名URLへ直接 PUT してから Commit する。
+type CreatePhotoResult struct {
+	Photo  *domain.Photo
+	Upload UploadTarget
+}
+
+// Create は写真のレコードを PendingUpload で作り、画像アップロード用の署名URLを返す。
+// オブジェクトストレージは外部システムでロールバックできないため、鍵の予約だけを先に行い、
+// 実体の存在確認は Commit で行う。
+func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*CreatePhotoResult, error) {
 	p, ok := authz.PrincipalFrom(ctx)
 	if !ok {
 		return nil, ErrForbidden
@@ -75,7 +94,11 @@ func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*domai
 	if err != nil {
 		return nil, err
 	}
-	photo, err := domain.NewPhoto(p.Subject, caption, visibility, in.GearItemID)
+	key, err := c.images.NewKey(p.Subject, in.ContentType)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", domain.ErrInvalid, err)
+	}
+	photo, err := domain.NewPhoto(p.Subject, caption, visibility, in.GearItemID, key, in.ContentType)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +122,66 @@ func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*domai
 	if err != nil {
 		return nil, err
 	}
-	return photo, nil
+	upload, err := c.images.PresignPut(ctx, key, in.ContentType, uploadTTL)
+	if err != nil {
+		return nil, err
+	}
+	return &CreatePhotoResult{Photo: photo, Upload: upload}, nil
+}
+
+// CommitUpload は画像の存在を確認して Ready へ遷移させる。
+// 実体がなければ遷移させないので、DB にあるが画像がない状態は表示経路に出ない。
+func (c *PhotoCommands) CommitUpload(ctx context.Context, id domain.PhotoID) (*domain.Photo, error) {
+	if err := c.can(ctx, ActionEdit, id); err != nil {
+		return nil, err
+	}
+	var photo *domain.Photo
+	err := c.atomic.Do(ctx, func(ctx context.Context) error {
+		p, err := c.photos.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		info, err := c.images.Stat(ctx, p.ObjectKey())
+		if err != nil {
+			return err
+		}
+		if err := p.CommitUpload(info.SizeBytes); err != nil {
+			return err
+		}
+		if err := c.photos.Save(ctx, p); err != nil {
+			return err
+		}
+		photo = p
+		return nil
+	})
+	return photo, err
+}
+
+// Reclaim はアップロードが完了しないまま放置された写真を、オブジェクトごと削除する。
+// オブジェクトが先に消えても行が残るだけなので、削除はオブジェクト → 行の順で行う。
+func (c *PhotoCommands) Reclaim(ctx context.Context, olderThan time.Duration, limit int) (int, error) {
+	stale, err := c.photos.ListStalePending(ctx, time.Now().Add(-olderThan), limit)
+	if err != nil {
+		return 0, err
+	}
+	var reclaimed int
+	for _, p := range stale {
+		if err := c.images.Delete(ctx, p.ObjectKey()); err != nil {
+			return reclaimed, err
+		}
+		if err := c.photos.Delete(ctx, p.ID()); err != nil {
+			return reclaimed, err
+		}
+		if err := c.relations.DeleteRelations(ctx, []authz.Tuple{{
+			Subject:  authz.UserRef(p.OwnerSubject()),
+			Relation: "owner",
+			Object:   authz.ObjectRef(ResourceType, fmt.Sprint(p.ID())),
+		}}); err != nil {
+			return reclaimed, err
+		}
+		reclaimed++
+	}
+	return reclaimed, nil
 }
 
 // Publish は写真を公開する。

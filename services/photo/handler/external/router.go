@@ -41,6 +41,16 @@ func Register(api httpapi.API, deps Deps) {
 	}, h.createPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
+		OperationID: "CommitPhoto",
+		Method:      http.MethodPost,
+		Path:        "/photos/{id}:commit",
+		Summary:     "画像のアップロード完了を確定する",
+		Description: "署名URLへの PUT が終わったら呼ぶ。画像の実体が確認できなければ確定しない。",
+		Tags:        []string{"photos"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
+	}, h.commitPhoto)
+
+	huma.Register(api.Huma, huma.Operation{
 		OperationID: "PublishPhoto",
 		Method:      http.MethodPost,
 		Path:        "/photos/{id}:publish",
@@ -76,21 +86,38 @@ type Photo struct {
 	OwnerID    string  `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
 	Caption    string  `json:"caption" example:"朝の光" doc:"キャプション"`
 	Visibility string  `json:"visibility" enum:"private,public" example:"public" doc:"公開状態"`
+	Status     string  `json:"status" enum:"pending_upload,ready" example:"ready" doc:"画像のアップロード状態"`
 	GearItemID *int64  `json:"gear_item_id,omitempty" example:"42" doc:"使用機材（gear の item ID）"`
 	GearName   *string `json:"gear_name,omitempty" example:"X-T5" doc:"使用機材の表示名（ReplicaView 由来。業務判断に使わない）"`
+	ImageURL   string  `json:"image_url,omitempty" doc:"画像取得用の署名付きURL。期限付き"`
+	SizeBytes  int64   `json:"size_bytes,omitempty" doc:"画像のバイト数"`
 	CreatedAt  string  `json:"created_at" format:"date-time" doc:"投稿時刻"`
 }
 
 // CreatePhotoInput は投稿コマンドの入力。形式的な検証はこの型が担う。
 type CreatePhotoInput struct {
 	Body struct {
-		Caption    string `json:"caption" maxLength:"1000" doc:"キャプション"`
-		Visibility string `json:"visibility,omitempty" enum:"private,public" default:"private" doc:"公開状態"`
-		GearItemID *int64 `json:"gear_item_id,omitempty" minimum:"1" doc:"使用機材（gear の item ID）。指定すると gear への紐付けが pending で始まる"`
+		Caption     string `json:"caption" maxLength:"1000" doc:"キャプション"`
+		Visibility  string `json:"visibility,omitempty" enum:"private,public" default:"private" doc:"公開状態"`
+		GearItemID  *int64 `json:"gear_item_id,omitempty" minimum:"1" doc:"使用機材（gear の item ID）。指定すると gear への紐付けが pending で始まる"`
+		ContentType string `json:"content_type" enum:"image/jpeg,image/png,image/webp,image/avif" example:"image/jpeg" doc:"アップロードする画像の種類"`
 	}
 }
 
 type CreatePhotoOutput struct {
+	Body struct {
+		Photo
+		// UploadURL へ画像を PUT し、その後 :commit を呼ぶ。
+		UploadURL       string `json:"upload_url" doc:"画像アップロード用の署名付きURL。Content-Type ヘッダを content_type と同じ値で送る"`
+		UploadExpiresAt string `json:"upload_expires_at" format:"date-time" doc:"署名URLの有効期限"`
+	}
+}
+
+type CommitPhotoInput struct {
+	ID int64 `path:"id" minimum:"1" doc:"写真ID"`
+}
+
+type CommitPhotoOutput struct {
 	Body Photo
 }
 
@@ -123,15 +150,28 @@ type ListPhotosOutput struct {
 }
 
 func (h *handlers) createPhoto(ctx context.Context, in *CreatePhotoInput) (*CreatePhotoOutput, error) {
-	photo, err := h.deps.Commands.Create(ctx, usecase.CreatePhotoInput{
-		Caption:    in.Body.Caption,
-		Visibility: in.Body.Visibility,
-		GearItemID: in.Body.GearItemID,
+	res, err := h.deps.Commands.Create(ctx, usecase.CreatePhotoInput{
+		Caption:     in.Body.Caption,
+		Visibility:  in.Body.Visibility,
+		GearItemID:  in.Body.GearItemID,
+		ContentType: in.Body.ContentType,
 	})
 	if err != nil {
 		return nil, toHTTP(err)
 	}
-	return &CreatePhotoOutput{Body: fromEntity(photo)}, nil
+	out := &CreatePhotoOutput{}
+	out.Body.Photo = fromEntity(res.Photo)
+	out.Body.UploadURL = res.Upload.URL
+	out.Body.UploadExpiresAt = res.Upload.ExpiresAt.UTC().Format(time.RFC3339)
+	return out, nil
+}
+
+func (h *handlers) commitPhoto(ctx context.Context, in *CommitPhotoInput) (*CommitPhotoOutput, error) {
+	photo, err := h.deps.Commands.CommitUpload(ctx, domain.PhotoID(in.ID))
+	if err != nil {
+		return nil, toHTTP(err)
+	}
+	return &CommitPhotoOutput{Body: fromEntity(photo)}, nil
 }
 
 func (h *handlers) publishPhoto(ctx context.Context, in *PublishPhotoInput) (*PublishPhotoOutput, error) {
@@ -176,7 +216,11 @@ func fromEntity(p *domain.Photo) Photo {
 		OwnerID:    p.OwnerSubject(),
 		Caption:    string(p.Caption()),
 		Visibility: string(p.Visibility()),
+		Status:     string(p.Status()),
 		GearItemID: p.GearItemID(),
+	}
+	if p.SizeBytes() != nil {
+		out.SizeBytes = *p.SizeBytes()
 	}
 	if !p.CreatedAt().IsZero() {
 		out.CreatedAt = p.CreatedAt().UTC().Format(time.RFC3339)
@@ -190,7 +234,10 @@ func fromView(v usecase.PhotoView) Photo {
 		OwnerID:    v.OwnerID,
 		Caption:    v.Caption,
 		Visibility: v.Visibility,
+		Status:     v.Status,
 		GearItemID: v.GearItemID,
+		ImageURL:   v.ImageURL,
+		SizeBytes:  v.SizeBytes,
 		CreatedAt:  v.CreatedAt,
 	}
 }
@@ -204,6 +251,12 @@ func toHTTP(err error) error {
 		return problem.New(http.StatusForbidden, problem.CodeForbidden, "権限がない")
 	case errors.Is(err, domain.ErrAlreadyPublished):
 		return problem.New(http.StatusConflict, "photo.already_published", "すでに公開済み")
+	case errors.Is(err, domain.ErrUploadNotFinished):
+		return problem.New(http.StatusConflict, "photo.upload_not_finished", "画像のアップロードが完了していない")
+	case errors.Is(err, domain.ErrNotPending):
+		return problem.New(http.StatusConflict, "photo.not_pending", "アップロード待ちではない")
+	case errors.Is(err, usecase.ErrObjectNotFound):
+		return problem.New(http.StatusConflict, "photo.object_not_found", "画像がアップロードされていない")
 	case errors.Is(err, domain.ErrInvalid):
 		return problem.New(http.StatusUnprocessableEntity, problem.CodeValidationFailed, err.Error())
 	case errors.Is(err, usecase.ErrInjectedFault):

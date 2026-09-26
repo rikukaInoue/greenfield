@@ -19,6 +19,7 @@ import (
 	"github.com/rikukaInoue/greenfield/core/authz/staticauthn"
 	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/external"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
@@ -51,6 +52,8 @@ type Config struct {
 	DSN string
 	// LocalAuthzDSN は擬似ReBAC のタプル置き場。サービスのDBとは別。
 	LocalAuthzDSN string
+	// Images は画像オブジェクトの置き場所。
+	Images blobstore.Config
 }
 
 // ConfigFromEnv は環境変数から設定を読む。
@@ -61,6 +64,13 @@ func ConfigFromEnv() Config {
 		AdminAddr:     envOr("PHOTO_ADMIN_ADDR", ":8082"),
 		DSN:           envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo?parseTime=true"),
 		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
+		Images: blobstore.Config{
+			Bucket:          envOr("PHOTO_IMAGE_BUCKET", "photo-images"),
+			Region:          envOr("AWS_REGION", "us-east-1"),
+			Endpoint:        envOr("AWS_ENDPOINT_URL", "http://localhost:9000"),
+			AccessKeyID:     envOr("AWS_ACCESS_KEY_ID", "test"),
+			SecretAccessKey: envOr("AWS_SECRET_ACCESS_KEY", "testtest"),
+		},
 	}
 }
 
@@ -84,7 +94,7 @@ func (d *Deps) Close() error {
 }
 
 // LocalDeps はローカル開発・CI用の実装を組み立てる。
-func LocalDeps(cfg Config) (*Deps, error) {
+func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	authn, err := staticauthn.New()
 	if err != nil {
 		return nil, err
@@ -99,12 +109,16 @@ func LocalDeps(cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, fmt.Errorf("photo db: %w", err)
 	}
+	images, err := blobstore.NewS3Store(ctx, cfg.Images)
+	if err != nil {
+		return nil, err
+	}
 	return &Deps{
 		Authenticator: authn,
 		Assurance:     simpleassurance.New(),
 		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), store, store, usecase.EnvFaults{}),
-		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), store, store),
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, usecase.EnvFaults{}),
+		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
 		closers: []func() error{db.Close, authzDB.Close},
 	}, nil
 }
@@ -137,7 +151,7 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 
 // Run は3リスナーを起動し、ctxのキャンセルまたはいずれかのリスナーの失敗で全て停止する。
 func Run(ctx context.Context, cfg Config) error {
-	deps, err := LocalDeps(cfg)
+	deps, err := LocalDeps(ctx, cfg)
 	if err != nil {
 		return err
 	}

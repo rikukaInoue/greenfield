@@ -10,8 +10,10 @@ import (
 
 // ドメインエラー。handler が HTTP ステータスとエラーコードへ対応づける。
 var (
-	ErrInvalid          = errors.New("photo: 値が不正")
-	ErrAlreadyPublished = errors.New("photo: すでに公開済み")
+	ErrInvalid           = errors.New("photo: 値が不正")
+	ErrAlreadyPublished  = errors.New("photo: すでに公開済み")
+	ErrUploadNotFinished = errors.New("photo: 画像のアップロードが完了していない")
+	ErrNotPending        = errors.New("photo: アップロード待ちではない")
 )
 
 // PhotoID は写真の識別子。
@@ -37,6 +39,16 @@ func ParseVisibility(s string) (Visibility, error) {
 	}
 }
 
+// Status は画像のアップロード状態。
+type Status string
+
+const (
+	// PendingUpload は署名URLを発行済みで、オブジェクトの存在をまだ確認していない状態。
+	PendingUpload Status = "pending_upload"
+	// Ready はオブジェクトの存在を確認済みで、表示してよい状態。
+	Ready Status = "ready"
+)
+
 // Caption はキャプション。前後の空白は落とす。
 type Caption string
 
@@ -59,13 +71,24 @@ type Photo struct {
 	caption      Caption
 	visibility   Visibility
 	gearItemID   *int64
+	objectKey    string
+	contentType  string
+	sizeBytes    *int64
+	status       Status
 	createdAt    time.Time
 }
 
-// NewPhoto は投稿を新規に作る。ID は保存時に確定する。
-func NewPhoto(ownerSubject string, caption Caption, visibility Visibility, gearItemID *int64) (*Photo, error) {
+// NewPhoto は投稿を新規に作る。ID は保存時に確定し、状態は PendingUpload から始まる。
+// objectKey は画像の置き場所で、アップロード完了前に決める。
+func NewPhoto(ownerSubject string, caption Caption, visibility Visibility, gearItemID *int64, objectKey, contentType string) (*Photo, error) {
 	if ownerSubject == "" {
 		return nil, fmt.Errorf("%w: 投稿者が空", ErrInvalid)
+	}
+	if objectKey == "" {
+		return nil, fmt.Errorf("%w: object_key が空", ErrInvalid)
+	}
+	if err := validateContentType(contentType); err != nil {
+		return nil, err
 	}
 	if visibility == "" {
 		visibility = Private
@@ -73,14 +96,44 @@ func NewPhoto(ownerSubject string, caption Caption, visibility Visibility, gearI
 	if gearItemID != nil && *gearItemID <= 0 {
 		return nil, fmt.Errorf("%w: gear_item_id が不正", ErrInvalid)
 	}
-	return &Photo{ownerSubject: ownerSubject, caption: caption, visibility: visibility, gearItemID: gearItemID}, nil
+	return &Photo{
+		ownerSubject: ownerSubject, caption: caption, visibility: visibility, gearItemID: gearItemID,
+		objectKey: objectKey, contentType: contentType, status: PendingUpload,
+	}, nil
+}
+
+// AllowedContentTypes はアップロードを受け付ける画像の種類。
+var AllowedContentTypes = []string{"image/jpeg", "image/png", "image/webp", "image/avif"}
+
+func validateContentType(ct string) error {
+	for _, allowed := range AllowedContentTypes {
+		if ct == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: content_type %q は受け付けない", ErrInvalid, ct)
+}
+
+// Restored は永続化された行の値。Repository 実装が Restore へ渡す。
+type Restored struct {
+	ID           PhotoID
+	OwnerSubject string
+	Caption      Caption
+	Visibility   Visibility
+	GearItemID   *int64
+	ObjectKey    string
+	ContentType  string
+	SizeBytes    *int64
+	Status       Status
+	CreatedAt    time.Time
 }
 
 // Restore は永続化された行から Entity を復元する。Repository 実装のみが呼ぶ。
-func Restore(id PhotoID, ownerSubject string, caption Caption, visibility Visibility, gearItemID *int64, createdAt time.Time) *Photo {
+func Restore(r Restored) *Photo {
 	return &Photo{
-		id: id, ownerSubject: ownerSubject, caption: caption,
-		visibility: visibility, gearItemID: gearItemID, createdAt: createdAt,
+		id: r.ID, ownerSubject: r.OwnerSubject, caption: r.Caption, visibility: r.Visibility,
+		gearItemID: r.GearItemID, objectKey: r.ObjectKey, contentType: r.ContentType,
+		sizeBytes: r.SizeBytes, status: r.Status, createdAt: r.CreatedAt,
 	}
 }
 
@@ -89,13 +142,32 @@ func (p *Photo) OwnerSubject() string   { return p.ownerSubject }
 func (p *Photo) Caption() Caption       { return p.caption }
 func (p *Photo) Visibility() Visibility { return p.visibility }
 func (p *Photo) GearItemID() *int64     { return p.gearItemID }
+func (p *Photo) ObjectKey() string      { return p.objectKey }
+func (p *Photo) ContentType() string    { return p.contentType }
+func (p *Photo) SizeBytes() *int64      { return p.sizeBytes }
+func (p *Photo) Status() Status         { return p.status }
 func (p *Photo) CreatedAt() time.Time   { return p.createdAt }
 
 // AssignID は保存時に確定した ID を与える。Repository 実装のみが呼ぶ。
 func (p *Photo) AssignID(id PhotoID) { p.id = id }
 
-// Publish は公開へ遷移させる。すでに公開済みなら ErrAlreadyPublished を返す。
+// CommitUpload は画像の存在が確認できたことを受けて Ready へ遷移させる。
+func (p *Photo) CommitUpload(sizeBytes int64) error {
+	if p.status != PendingUpload {
+		return ErrNotPending
+	}
+	if sizeBytes <= 0 {
+		return fmt.Errorf("%w: アップロードされた画像が空", ErrInvalid)
+	}
+	p.sizeBytes, p.status = &sizeBytes, Ready
+	return nil
+}
+
+// Publish は公開へ遷移させる。アップロード未完了の写真は公開できない。
 func (p *Photo) Publish() error {
+	if p.status != Ready {
+		return ErrUploadNotFinished
+	}
 	if p.visibility == Public {
 		return ErrAlreadyPublished
 	}

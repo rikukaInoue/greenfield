@@ -94,6 +94,15 @@ run = "go run ./dev/querylint $(mise run services)"
 description = "mysql を起動しヘルシーになるまで待つ"
 run = "docker compose up -d --wait mysql"
 
+[tasks."s3:up"]
+description = "オブジェクトストレージ（RustFS）を起動しバケットを用意する"
+run = ["docker compose up -d --wait rustfs", "go run ./dev/s3admin ensure-buckets"]
+
+[tasks."infra:up"]
+description = "ローカル依存を一括起動（mysql + RustFS + マイグレーション）"
+depends = ["db:up", "s3:up"]
+run = "go run ./services/photo/cmd/photo migrate expand"
+
 [tasks."db:down"]
 description = "コンテナを停止"
 run = "docker compose down"
@@ -110,6 +119,10 @@ run = "docker exec -it greenfield-mysql mysql -uroot -proot"
 description = "全サービスの expand を適用"
 depends = ["db:up"]
 run = "go run ./services/photo/cmd/photo migrate expand"
+
+[tasks.reclaim]
+description = "アップロード未完了の写真を回収する: mise run reclaim -- --older-than 1m"
+run = "go run ./services/photo/cmd/photo reclaim"
 
 [tasks."migrate:status"]
 description = "各サービスのマイグレーション状態"

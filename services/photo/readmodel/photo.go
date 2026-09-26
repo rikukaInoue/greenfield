@@ -86,7 +86,12 @@ func view(row sqlcgen.Photo) usecase.PhotoView {
 		OwnerID:    row.OwnerSubject,
 		Caption:    row.Caption,
 		Visibility: string(row.Visibility),
+		Status:     string(row.Status),
+		ObjectKey:  row.ObjectKey.String,
 		CreatedAt:  row.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if row.SizeBytes.Valid {
+		v.SizeBytes = row.SizeBytes.Int64
 	}
 	if row.GearItemID.Valid {
 		id := row.GearItemID.Int64

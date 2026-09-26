@@ -33,7 +33,9 @@ Phase 0〜6 は完全ローカル（クラウド費用ゼロ）、AWS は Phase 
 mise install                 # Go（mise.toml）
 mise run build:ws            # ワークスペースで全モジュールをビルド（日常用）
 mise run check               # fmt + build + vet + test を GOWORK=off で並列実行（CI相当。境界チェックはこちらでしか効かない）
-mise run db:up               # mysql:8.4 を起動（database/ユーザー/GRANT は deploy/compose/mysql/init）
+mise run infra:up            # mysql + RustFS を起動し、バケット作成とマイグレーションまで済ませる
+mise run db:up               # mysql:8.4 のみ（database/ユーザー/GRANT は deploy/compose/mysql/init）
+mise run s3:up               # RustFS のみ（バケットは dev/s3admin が作る）
 mise run migrate             # 各サービスの expand を適用（<name> migrate expand|contract|status）
 mise run schema:dump         # マイグレーション全適用後の dump で db/schema.sql（sqlc の入力）を更新
 mise run sqlc                # sqlc generate（生成型は各層の internal/sqlcgen に閉じる）

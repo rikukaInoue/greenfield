@@ -8,13 +8,13 @@ import (
 )
 
 func TestNewPhotoRequiresOwner(t *testing.T) {
-	if _, err := domain.NewPhoto("", "", domain.Private, nil); !errors.Is(err, domain.ErrInvalid) {
+	if _, err := domain.NewPhoto("", "", domain.Private, nil, "k", "image/jpeg"); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
 }
 
 func TestNewPhotoDefaultsToPrivate(t *testing.T) {
-	p, err := domain.NewPhoto("alice", "朝の光", "", nil)
+	p, err := domain.NewPhoto("alice", "朝の光", "", nil, "k", "image/jpeg")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,8 +24,11 @@ func TestNewPhotoDefaultsToPrivate(t *testing.T) {
 }
 
 func TestPublishIsOneWayTransition(t *testing.T) {
-	p, err := domain.NewPhoto("alice", "", domain.Private, nil)
+	p, err := domain.NewPhoto("alice", "", domain.Private, nil, "k", "image/jpeg")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CommitUpload(1024); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.Publish(); err != nil {
@@ -63,7 +66,45 @@ func TestParseVisibility(t *testing.T) {
 
 func TestGearItemIDMustBePositive(t *testing.T) {
 	zero := int64(0)
-	if _, err := domain.NewPhoto("alice", "", domain.Private, &zero); !errors.Is(err, domain.ErrInvalid) {
+	if _, err := domain.NewPhoto("alice", "", domain.Private, &zero, "k", "image/jpeg"); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("err = %v, want ErrInvalid", err)
+	}
+}
+
+func TestPublishRequiresFinishedUpload(t *testing.T) {
+	p, err := domain.NewPhoto("alice", "", domain.Private, nil, "k", "image/jpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Publish(); !errors.Is(err, domain.ErrUploadNotFinished) {
+		t.Fatalf("err = %v, want ErrUploadNotFinished", err)
+	}
+}
+
+func TestCommitUploadOnlyFromPending(t *testing.T) {
+	p, err := domain.NewPhoto("alice", "", domain.Private, nil, "k", "image/jpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Status() != domain.PendingUpload {
+		t.Fatalf("status = %q, want pending_upload", p.Status())
+	}
+	if err := p.CommitUpload(0); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("空の画像 = %v, want ErrInvalid", err)
+	}
+	if err := p.CommitUpload(1024); err != nil {
+		t.Fatal(err)
+	}
+	if p.Status() != domain.Ready {
+		t.Fatalf("status = %q, want ready", p.Status())
+	}
+	if err := p.CommitUpload(1024); !errors.Is(err, domain.ErrNotPending) {
+		t.Fatalf("2回目 = %v, want ErrNotPending", err)
+	}
+}
+
+func TestRejectsUnknownContentType(t *testing.T) {
+	if _, err := domain.NewPhoto("alice", "", domain.Private, nil, "k", "application/pdf"); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
 }

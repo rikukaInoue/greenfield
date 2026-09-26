@@ -28,3 +28,5 @@
 | [0005](0005-sqlc-internal-and-cqs.md) | sqlc 生成型は各層の `internal/` に閉じ、CQS で分割する | 要 |
 | [0006](0006-ci-gowork-off.md) | モジュール境界の検証は `GOWORK=off` でしか効かない | 要 |
 | [0007](0007-spec-version-before-implementation.md) | 実装前に切った契約のバージョンは 1.0.0 にしない | 要 |
+| [0008](0008-object-storage-rustfs.md) | ローカルのオブジェクトストレージは RustFS（LocalStack S3 は使わない） | 要 |
+| [0009](0009-presigned-upload.md) | 画像は署名付きURLでアップロードし pending → ready で確定する | 要 |

@@ -54,6 +54,7 @@ type ServicePhoto struct {
 	OwnerID    string `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
 	Caption    string `json:"caption" doc:"キャプション"`
 	GearItemID *int64 `json:"gear_item_id,omitempty" doc:"使用機材（gear の item ID）"`
+	ImageURL   string `json:"image_url,omitempty" doc:"画像取得用の署名付きURL。期限付き"`
 	CreatedAt  string `json:"created_at" format:"date-time" doc:"投稿時刻"`
 }
 
@@ -100,7 +101,7 @@ func (h *handlers) listPhotosByGearItem(ctx context.Context, in *ListPhotosByGea
 func servicePhoto(v usecase.PhotoView) ServicePhoto {
 	return ServicePhoto{
 		ID: v.ID, OwnerID: v.OwnerID, Caption: v.Caption,
-		GearItemID: v.GearItemID, CreatedAt: v.CreatedAt,
+		GearItemID: v.GearItemID, ImageURL: v.ImageURL, CreatedAt: v.CreatedAt,
 	}
 }
 

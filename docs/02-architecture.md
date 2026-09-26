@@ -8,7 +8,7 @@
 
 | コンテキスト | 役割 | 検証上の位置づけ |
 |---|---|---|
-| **photo**（写真投稿） | 写真・キャプション・公開/非公開・所有者・使用機材（gearのitem IDのみ保持） | V1参照実装。所有者ReBAC、Atomic（投稿レコード+タプル）、migrate、オンライン改名の被験体 |
+| **photo**（写真投稿） | 写真（画像本体はオブジェクトストレージ）・キャプション・公開/非公開・所有者・使用機材（gearのitem IDのみ保持） | V1参照実装。所有者ReBAC、Atomic（投稿レコード+タプル）、署名付きURLのアップロード、migrate、オンライン改名の被験体 |
 | **gear**（機材情報） | 機材（`kind`: camera / lens / tripod …）の機種情報の投稿とカタログ。作例（写真）の紐付け一覧 | V2。サービス間、Eventual、ReplicaView、pending状態パターンの相手 |
 
 コンテキスト間の相互作用は3本で、それぞれ conventions/internal-03 の分岐に対応する。
@@ -20,6 +20,8 @@ photo ──(イベント: PhotoPublished)──▶ gear             起きれ�
 ```
 
 同期コマンドの具体形: 写真投稿時に使用機材を指定すると、photoは `GearLinkPending` としてAtomicで確定し、tx外で `POST /items/{id}:link-photo`（`Idempotency-Key` 付き）をgearへ発行し、結果を別のAtomicで `GearLinked` / `GearLinkRejected`（機材が非公開・存在しない等）へ反映する。gear停止中は pending のまま残り、回収ジョブが冪等キーで照会して確定させる（04 #11）。
+
+画像本体はDBに入れず、S3互換のオブジェクトストレージに置く。アプリはバイト列を通さず署名付きURLを発行するだけで、クライアントが直接 PUT する。オブジェクトストレージは外部システムなのでAtomicに載せられないため、「無害な側（オブジェクトだけ存在）」を先に作り、`pending_upload` → `:commit`（実体確認）→ `ready` の順で確定させる（docs/adr/0009）。放置された `pending_upload` は `photo reclaim` が回収する。
 
 認可は photo / gear とも「所有者（投稿者）+ platform operator」の同型モデル（03のFGA最小モデル）。危険操作サンプルはアカウント削除（全投稿の削除）とし、ステップアップの検証対象（任意）に充てる。
 
@@ -51,7 +53,8 @@ photo ──(イベント: PhotoPublished)──▶ gear             起きれ�
 | mysql:8 | 全DB（本番と同エンジン）。database: photo / gear / platform + kratos / hydra / openfga 各専用 |
 | keycloak | OIDC OP（realm定義JSONを `--import-realm` で毎回再現。CIでも同一コンテナが立つ）。ポート8180 |
 | openfga | ReBACエンジン。platform/authz からのみ到達 |
-| localstack | SNS + SQS FIFO（Eventual基盤） |
+| rustfs | 画像オブジェクト（S3互換）。署名付きURLの検証が本物と同じに働くことが選定理由（docs/adr/0008） |
+| localstack | SNS + SQS FIFO（Eventual基盤）。S3 は使わない |
 | flagd | フィーチャーフラグ（OpenFeatureプロバイダ。フラグ定義はリポジトリ内ファイルをgit管理） |
 | otel-collector + jaeger | トレース。昇格シグナルの観測手段を初日から持つ（可観測性なしでは昇格条件が絵に描いた餅になるため） |
 

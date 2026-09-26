@@ -8,12 +8,13 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const createPhoto = `-- name: CreatePhoto :execresult
 
-INSERT INTO photos (owner_subject, caption, visibility, gear_item_id)
-VALUES (?, ?, ?, ?)
+INSERT INTO photos (owner_subject, caption, visibility, gear_item_id, object_key, content_type, status)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreatePhotoParams struct {
@@ -21,6 +22,9 @@ type CreatePhotoParams struct {
 	Caption      string
 	Visibility   PhotosVisibility
 	GearItemID   sql.NullInt64
+	ObjectKey    sql.NullString
+	ContentType  sql.NullString
+	Status       PhotosStatus
 }
 
 // コマンド側（Entity の復元・保存）のクエリ。参照できるのは自ドメイン（photo）のテーブルのみ。
@@ -30,7 +34,19 @@ func (q *Queries) CreatePhoto(ctx context.Context, arg CreatePhotoParams) (sql.R
 		arg.Caption,
 		arg.Visibility,
 		arg.GearItemID,
+		arg.ObjectKey,
+		arg.ContentType,
+		arg.Status,
 	)
+}
+
+const deletePhoto = `-- name: DeletePhoto :exec
+DELETE FROM photos WHERE id = ?
+`
+
+func (q *Queries) DeletePhoto(ctx context.Context, id uint64) error {
+	_, err := q.db.ExecContext(ctx, deletePhoto, id)
+	return err
 }
 
 const deletePhotosByOwner = `-- name: DeletePhotosByOwner :execresult
@@ -42,7 +58,7 @@ func (q *Queries) DeletePhotosByOwner(ctx context.Context, ownerSubject string) 
 }
 
 const getPhotoForUpdate = `-- name: GetPhotoForUpdate :one
-SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at FROM photos WHERE id = ? FOR UPDATE
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos WHERE id = ? FOR UPDATE
 `
 
 func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, error) {
@@ -56,19 +72,75 @@ func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, erro
 		&i.GearItemID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ObjectKey,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.Status,
 	)
 	return i, err
 }
 
+const listStalePendingPhotos = `-- name: ListStalePendingPhotos :many
+SELECT id, owner_subject, caption, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status FROM photos
+WHERE status = 'pending_upload' AND created_at < ?
+ORDER BY created_at LIMIT ?
+`
+
+type ListStalePendingPhotosParams struct {
+	CreatedAt time.Time
+	Limit     int32
+}
+
+// 回収ジョブ: アップロードが完了しないまま放置された行
+func (q *Queries) ListStalePendingPhotos(ctx context.Context, arg ListStalePendingPhotosParams) ([]Photo, error) {
+	rows, err := q.db.QueryContext(ctx, listStalePendingPhotos, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Photo{}
+	for rows.Next() {
+		var i Photo
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerSubject,
+			&i.Caption,
+			&i.Visibility,
+			&i.GearItemID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ObjectKey,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updatePhoto = `-- name: UpdatePhoto :exec
-UPDATE photos SET caption = ?, visibility = ?, gear_item_id = ? WHERE id = ?
+UPDATE photos
+SET caption = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
+WHERE id = ?
 `
 
 type UpdatePhotoParams struct {
-	Caption    string
-	Visibility PhotosVisibility
-	GearItemID sql.NullInt64
-	ID         uint64
+	Caption     string
+	Visibility  PhotosVisibility
+	GearItemID  sql.NullInt64
+	ContentType sql.NullString
+	SizeBytes   sql.NullInt64
+	Status      PhotosStatus
+	ID          uint64
 }
 
 func (q *Queries) UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) error {
@@ -76,6 +148,9 @@ func (q *Queries) UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) error 
 		arg.Caption,
 		arg.Visibility,
 		arg.GearItemID,
+		arg.ContentType,
+		arg.SizeBytes,
+		arg.Status,
 		arg.ID,
 	)
 	return err

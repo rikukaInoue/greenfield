@@ -26,6 +26,7 @@
 | 1.1 | Atomic | ctx運搬tx、queries(ctx)、偽Atomic、CreatePhoto(Entity) | #4 fn内2Repo+故意エラーで両方ロールバック | M |
 | 1.2 | CQS | Read Model直行の一覧、:verbコマンド | コマンド=Entity経由 / クエリ=tx外の実地 | M |
 | 1.3 | 認可呼び出し固定 | Can/ListAccessible/WriteRelations（localauthz） | #5 失敗注入で注文ごと消える、#6 孤児無害、#7（local版） | M |
+| 1.3b | 画像ストレージ | 署名付きURL（PUT/GET）、pending_upload→commit→ready、回収ジョブ、RustFS（compose） | #28 有害な不整合が表に出ない、#29 署名なしアクセスが拒否される | M |
 | 1.4 | フラグ | OpenFeature+flagd、入口ミドルウェア→ctx | OFF/ON切替、基盤停止時に安全側 | S |
 | 1.5a | 観測手段 | 負荷スクリプト（連続読み書き）+ 新旧カラム一致チェッカー | 検証の観測手段そのもの | S |
 | 1.5b | expand+二重書き | INSTANT/INPLACE確認、旧バイナリ並走（allinone×2） | #15 全段エラーなし | M |

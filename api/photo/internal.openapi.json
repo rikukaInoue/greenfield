@@ -127,6 +127,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "image_url": {
+            "description": "画像取得用の署名付きURL。期限付き",
+            "type": "string"
+          },
           "owner_id": {
             "description": "投稿者のSubject",
             "examples": [

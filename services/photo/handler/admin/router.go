@@ -67,6 +67,7 @@ type AdminPhoto struct {
 	OwnerID    string `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
 	Caption    string `json:"caption" doc:"キャプション"`
 	Visibility string `json:"visibility" enum:"private,public" doc:"公開状態"`
+	Status     string `json:"status" enum:"pending_upload,ready" doc:"画像のアップロード状態"`
 	CreatedAt  string `json:"created_at" format:"date-time" doc:"投稿時刻"`
 }
 
@@ -94,7 +95,7 @@ func (h *handlers) adminListPhotos(ctx context.Context, in *AdminListPhotosInput
 	for _, v := range views {
 		out.Body.Photos = append(out.Body.Photos, AdminPhoto{
 			ID: v.ID, OwnerID: v.OwnerID, Caption: v.Caption,
-			Visibility: v.Visibility, CreatedAt: v.CreatedAt,
+			Visibility: v.Visibility, Status: v.Status, CreatedAt: v.CreatedAt,
 		})
 	}
 	return out, nil

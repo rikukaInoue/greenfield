@@ -11,6 +11,48 @@ import (
 	"time"
 )
 
+type PhotosStatus string
+
+const (
+	PhotosStatusPendingUpload PhotosStatus = "pending_upload"
+	PhotosStatusReady         PhotosStatus = "ready"
+)
+
+func (e *PhotosStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PhotosStatus(s)
+	case string:
+		*e = PhotosStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PhotosStatus: %T", src)
+	}
+	return nil
+}
+
+type NullPhotosStatus struct {
+	PhotosStatus PhotosStatus
+	Valid        bool // Valid is true if PhotosStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPhotosStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.PhotosStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PhotosStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPhotosStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PhotosStatus), nil
+}
+
 type PhotosVisibility string
 
 const (
@@ -61,4 +103,8 @@ type Photo struct {
 	GearItemID   sql.NullInt64
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	ObjectKey    sql.NullString
+	ContentType  sql.NullString
+	SizeBytes    sql.NullInt64
+	Status       PhotosStatus
 }
