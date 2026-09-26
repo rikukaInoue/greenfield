@@ -45,7 +45,7 @@ description = "各モジュールを GOWORK=off で go mod tidy"
 run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exit 1; done'
 
 [tasks.check]
-description = "fmt + build + vet + test + lint:queries をまとめて（CI 相当。schema:check は DB が要るので別）"
+description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check（CI 相当。schema:check は DB が要るので別）"
 depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:check", "api:check"]
 
 # --- sqlc とスキーマ整合 ---
