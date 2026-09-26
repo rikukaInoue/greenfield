@@ -448,3 +448,45 @@ CloudWatch アラームでの自動ロールバック）が規約の展開手順
 - イメージは distroless でシェルも curl も持たないため、**コンテナ内の healthcheck を書けない**。
   当初 `/flagd-build --version` を指定していて常に unhealthy になっていた。healthcheck を外し、
   到達性はアプリ側が既定値へ倒れる形で吸収する
+
+## 2026-09-27 — ステージ 5.2 SSR（前半: Keycloak 配線前、#56）
+
+コードは #78 に同梱して main に入った。本 PR は起動タスク・CI・記録の補完。
+
+### 作ったもの
+
+- `frontend/`（pnpm workspace）
+  - `apps/web`: React Router 8 のフレームワークモード（`ssr: true`）。loader / action がサーバー側で photo external API を呼ぶ
+  - `packages/photo-api`: `api/photo/external.openapi.json` から openapi-typescript で生成した型（手書きしない）
+  - `packages/api-core`（`./server`）: openapi-fetch のミドルウェアでトークン注入・`X-Request-Id`・
+    `Idempotency-Key` を付与し、`insufficient_user_authentication` を `StepUpRequired` として投げる
+- 認証は暫定で、`/login` が devtoken を発行して httpOnly Cookie のセッションへ保存する（ENV=production では無効）
+- 投稿は ADR 0009 の3段（作成 → ブラウザから署名URLへ直接 PUT → commit）。画像は SSR を経由しない
+- `dev/s3admin ensure-buckets` がバケットの CORS（`FRONTEND_ORIGINS`、既定 `:5173` / `:3000`）も設定する
+
+### 実験
+
+| 操作 | 結果 |
+|---|---|
+| 未ログインで `/` | 302 → `/login?returnTo=%2F` |
+| ログイン → 一覧 | 200。`image_url` の署名URLで表示 |
+| 作成 → 署名URLへ PUT（Origin: localhost:5173） | CORS 通過、PUT 200 |
+| commit → `/photos/:id?fresh=1` | 直後の詳細で自分の書き込みが見える |
+| 公開 → `/?visibility=public` | 一覧に出る |
+| 存在しないID | 404 |
+| HTML・クライアントバンドルに `dev.` トークン / セッション秘密 | 出ない |
+
+### 気づき
+
+1. RustFS は既定で CORS ヘッダを返さない（プリフライトは 200 だが `Access-Control-Allow-Origin` なし）。
+   バケット CORS（`PutBucketCors`）には対応しているので、バケット作成と同じ場所で設定した
+2. Cookie セッションは署名のみで暗号化していないため、トークンは Cookie 値に base64 で載る。
+   JS からは読めない（httpOnly）が、Keycloak 配線時はセッションIDだけを Cookie に持たせ、
+   トークンはサーバー側ストアへ移す
+3. 画像の直接 PUT は `clientAction` → resource route（`/resources/photos` 等）への fetch で組んだ。
+   `serverAction()` はリクエスト本文をそのまま転送するため、画像が SSR に流れてしまい使えない
+
+### 還流
+
+- [ ] internal-07: 署名URL直 PUT を使うなら、ローカルのオブジェクトストレージにもバケット CORS が要る
+- [ ] #17 は Keycloak 配線（3.1 / 3.3）後、サーバー側セッションに移してから devtools で確認してクローズする

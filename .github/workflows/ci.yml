@@ -99,3 +99,6 @@ jobs:
         env:
           API_BASE_REF: origin/${{ github.base_ref }}
         run: mise run --quiet api:breaking
+
+      - name: フロントエンド（生成型の一致 / typecheck / build）
+        run: mise run --quiet web:check
