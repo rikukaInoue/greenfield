@@ -7,6 +7,11 @@ CREATE TABLE `photos` (
   `gear_item_id` bigint unsigned DEFAULT NULL,
   `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `object_key` varchar(255) DEFAULT NULL,
+  `content_type` varchar(100) DEFAULT NULL,
+  `size_bytes` bigint unsigned DEFAULT NULL,
+  `status` enum('pending_upload','ready') NOT NULL DEFAULT 'ready',
   PRIMARY KEY (`id`),
-  KEY `idx_photos_owner` (`owner_subject`,`created_at`)
+  KEY `idx_photos_owner` (`owner_subject`,`created_at`),
+  KEY `idx_photos_status_created` (`status`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

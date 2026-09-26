@@ -61,6 +61,14 @@
             ],
             "type": "string"
           },
+          "status": {
+            "description": "画像のアップロード状態",
+            "enum": [
+              "pending_upload",
+              "ready"
+            ],
+            "type": "string"
+          },
           "visibility": {
             "description": "公開状態",
             "enum": [
@@ -75,6 +83,7 @@
           "owner_id",
           "caption",
           "visibility",
+          "status",
           "created_at"
         ],
         "type": "object"
@@ -257,7 +266,7 @@
     },
     "/photos": {
       "get": {
-        "description": "platform operator の権限で列挙する。専用機構ではなく ReBAC で解決する。",
+        "description": "platform operator の権限で列挙する。",
         "operationId": "AdminListPhotos",
         "parameters": [
           {

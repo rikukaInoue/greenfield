@@ -24,5 +24,41 @@ services:
       timeout: 3s
       retries: 30
 
+  # 画像オブジェクト。S3 互換。署名付きURLを実際に検証できることが選定理由
+  # （docs/adr/0008-object-storage-rustfs.md）。
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: greenfield-rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: test
+      RUSTFS_SECRET_KEY: testtest
+      RUSTFS_CONSOLE_ENABLE: "false"
+    ports:
+      - "9000:9000"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      # 署名なしのリクエストは 403 を返すので、到達性は接続の成否で見る
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:9000/ || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  # SNS / SQS FIFO（Phase 4.2 のイベント基盤）。S3 は RustFS を使うため対象外
+  localstack:
+    image: localstack/localstack:4
+    container_name: greenfield-localstack
+    environment:
+      SERVICES: sns,sqs
+      DEBUG: "0"
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
 volumes:
   mysql-data:
+  rustfs-data:

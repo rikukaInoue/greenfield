@@ -242,3 +242,148 @@
 - [ ] internal-01: ツリー図に `app/`（合成ルート。実装 import は app/ と cmd/* に限る）を明記。ハンドラは `Deps` で差し込み口を受ける形
 - [ ] internal-04: ローカル実装（擬似ReBAC）は FGAモデルの導出規則を表としてコードに写す。「viewer は owner から導出」を落とすと、所有者が自分のリソースを見られない形でしか露見しない
 - [ ] internal-04: 保証レベル不足時の応答形（RFC 9470 の `WWW-Authenticate` challenge）は core 側に持たせられる（`simpleassurance` の実装形）
+
+---
+
+## 2026-09-26 — ステージ 1.1 Atomic / 1.2 CQS / 1.3 認可呼び出し（#34 #35 #36） / チェック #4 #5 #6 #7
+
+### 作ったもの
+
+- `core/consistency`: `Atomic.Do` が ctx にトランザクションを埋め、Repository が `TxFrom` で参加する。ネスト安全。`FakeAtomic` も同梱
+- `services/photo/domain`: Photo Entity（不変条件と `Publish` の状態遷移のみ）、Visibility / Caption の Value Object。単体テスト5本
+- `services/photo/usecase`: `Atomic` / `Eventual` の語彙、`PhotoRepository` / `PhotoReader` interface、コマンド（`PhotoCommands`）とクエリ（`PhotoQueries`）を別の型に分離
+- `services/photo/repository`: sqlc 実装。`queries(ctx)` が tx の有無で `WithTx` を切り替える
+- `services/photo/readmodel`: Read Model。Entity を経由せず、トランザクションの外で実行
+- ハンドラを usecase へ配線。ドメインエラー → problem+json の対応表（`toHTTP`）
+- `usecase.FaultInjector`: 検証用の失敗注入（`PHOTO_FAULT=before_relations|before_commit`）
+
+### 実験
+
+alice が3枚、bob が1枚投稿した状態で確認した。
+
+**認可付き一覧（#7 local版）**
+
+| 主体 | `GET /photos` |
+|---|---|
+| alice | 3件（自分の分のみ） |
+| bob | 1件（alice の写真は見えない） |
+| op（platform operator） | 4件（`operator from parent` で導出） |
+
+`GET /photos/1` は alice が 200、bob は **404**（403 ではなく存在を伏せる）。
+
+**Entity の状態遷移**: `POST /photos/1:publish` → `visibility=public`。2回目は **409 `photo.already_published`**（Entity が遷移を拒否）。bob からは 404。
+
+**#4 / #5 Atomic**（`PHOTO_FAULT=before_relations`: 写真を INSERT した直後、タプル書き込みの直前で失敗）
+
+| | 投稿前 | 投稿後 |
+|---|---|---|
+| `photo.photos` | 4 | **4**（増えていない） |
+| owner タプル | 4 | 4 |
+
+写真レコードもタプルも残らない。fn 内の2操作が同一トランザクションで巻き戻った。
+
+**#6 孤児タプル**（`PHOTO_FAULT=before_commit`: タプル書き込み後、コミット直前で失敗）
+
+| | 結果 |
+|---|---|
+| `photo.photos` | 4（写真は消えた） |
+| owner タプル | **5**（`photo:7` が残った） |
+
+タプルは別ストアなのでロールバックされない（[ADR 0004](adr/0004-localauthz-separate-store.md)）。その状態で alice の一覧は **3件**のまま = 孤児タプルは一覧にも詳細にも現れず無害。
+
+**危険操作のゲート**（ステップアップ + operator の両方）
+
+| 主体 | `POST /accounts/bob:delete` |
+|---|---|
+| op（AAL1） | **401** `insufficient_user_authentication` |
+| alice（AAL2） | **403** `forbidden`（AAL は足りるが operator でない） |
+| op（AAL2） | 200 `deleted_photos=1` |
+
+**鮮度指定**: `GET /photos/{id}?fresh=true` で `authz.ConsistencyHigher` が authz へ透過する。擬似ReBAC は同期書き込みなので作成直後も既定で可視。OpenFGA へ差し替える 3.2 が本番検証。
+
+**internal リスナー**: 公開済みの写真は 200、非公開は **404**（サービス間にも出さない）。
+
+### 気づき
+
+1. **ローカル実装の導出表に `operator` を入れ忘れ、admin が全て 500 になった。** `grants` に `viewer`/`editor`/`owner` しか書いておらず、`platform.operate` → `operator` の解決で「未知の relation」エラーになっていた。FGA モデルを表としてコードに写すなら、**全ての type の全ての relation を網羅する**必要がある。
+2. **契約を先に確定させると、実装時の改善が破壊的変更になる。** `POST /photos` を 200 → 201 にしたところ `api:breaking` が正しく検出した。初版を `1.0.0` で切ったのが誤り（[ADR 0007](adr/0007-spec-version-before-implementation.md)）。200 のまま据え置き、201 への移行は 2.2 の `/v2` 並行提供の題材にする。
+3. 認可の拒否は **404 で返す**ことにした（存在を伏せる）。403 だと「その ID の写真は存在する」が漏れる。一方 operator 権限の不足は 403 のままにした（リソースの存在とは無関係なため）。
+4. `sqlc.slice` を使うクエリは生成関数の引数がスライスになるため、`LIMIT` と併用しづらい。一覧の件数制限は Read Model 側で切っている。
+
+---
+
+## 2026-09-27 — ステージ 1.3b 画像ストレージ（#74） / チェック #28 #29
+
+題材をカメラ情報サイトにした時点で画像本体の置き場所が抜けていた。設計書（02 のドメイン節、05 のロードマップ、04 のチェックリスト）に追加し、実装した。
+
+### 作ったもの
+
+- **RustFS**（S3互換、compose の `rustfs`、:9000）。LocalStack の S3 は使わない（後述）
+- `dev/s3admin ensure-buckets`: バケット作成。`mise run s3:up` が呼ぶ。DB の database 作成と同じくインフラ側の操作
+- `services/photo/blobstore`: S3 実装（署名付きURLの発行、HeadObject、削除）。AWS SDK は photo のモジュールに閉じた
+- `usecase.ImageStore` の差し込み口。マイグレーション 000002 で `object_key` / `content_type` / `size_bytes` / `status` を `ALGORITHM=INSTANT` で追加
+- 状態遷移: `POST /photos`（`pending_upload` + 署名付き PUT URL）→ クライアントが直接 PUT → `POST /photos/{id}:commit`（HeadObject で確認）→ `ready`
+- `photo reclaim`: 放置された `pending_upload` をオブジェクト → 行 → タプルの順に削除
+- 詳細・一覧の応答に署名付きの取得URL（期限10分）を付与
+
+### 実験: #28 有害な不整合が表に出ない
+
+| 手順 | 結果 |
+|---|---|
+| 実体をアップロードせず `:commit` | **409** `photo.object_not_found` |
+| 実体をアップロードせず `:publish` | **409** `photo.upload_not_finished` |
+| `pending_upload` の写真を一覧 | **0件**（表示経路に出ない） |
+| 実体を PUT → `:commit` | `status=ready size_bytes=89` |
+| 2回目の `:commit` | **409** `photo.not_pending` |
+| `:publish` | `visibility=public` |
+| 署名付きURLで画像取得 | 200、元ファイルとバイト一致 |
+
+回収ジョブ（`mise run reclaim -- --older-than 0s`）:
+
+| | photos | pending | タプル |
+|---|---|---|---|
+| 回収前 | 3 | 2 | 4 |
+| 回収後 | **1** | **0** | **2** |
+
+完走した写真は残り、放置分だけが消えた。
+
+### 実験: #29 署名付きURLが実際に検証される
+
+同じ流れを LocalStack S3 と RustFS の両方で測った。
+
+| 検査 | 期待 | LocalStack | RustFS |
+|---|---|---|---|
+| 署名付き PUT / GET | 200 | 200 | 200 |
+| **署名なし PUT** | 403 | **200** | **403** |
+| **署名なし GET** | 403 | **200** | **403** |
+| 改ざんした署名で GET | 4xx | 403 | 400 |
+| 不正なアクセスキー | 403 | 通る | 403 `InvalidAccessKeyId` |
+
+**LocalStack は `S3_SKIP_SIGNATURE_VALIDATION=0` を設定しても署名なしアクセスを通す。**
+署名付きURLが設計の前提なので、それを検証できないローカル環境には意味がない。
+RustFS は S3 プロトコルの実装そのものなので、拒否経路がローカルでそのまま働く（[ADR 0008](adr/0008-object-storage-rustfs.md)）。
+イメージサイズも 357MB 対 1.76GB で軽い。LocalStack は SNS / SQS 用として残した。
+
+### 気づき
+
+1. **zsh は `$ID:commit` を修飾子 `:c` として解釈し `1ommit` に展開する。** `:verb` のURLを変数で組むときは
+   `${ID}:commit` と書かなければならない。これを踏んだ結果 `POST /photos/1ommit` が
+   `GET /photos/{id}` に一致し **405 `Allow: GET`** が返り、chi のルーティング不具合だと1時間誤認した。
+   `$ID:publish` はたまたま無事（`:p` が修飾子として適用されない）だったため、切り分けが余計に難しくなった。
+   同じ事故を防ぐため、`app/routing_test.go` に `:verb` 到達性の回帰テストを置いた。
+   これは bash の多バイト文字の件（0.4）と同じ family の罠である。
+2. **停止したつもりのプロセスが生きていると、古いバイナリに当たって延々と嘘の結果が出る。**
+   `pkill` の直後に `pgrep` で確認し、必要ならポートを掴んでいる PID を落とすところまでやる。
+   検証のたびに `ps -o lstart` で起動時刻を見るのが確実。
+3. sqlc で SELECT の列を明示するとクエリごとに別の行型が生成され、Read Model 側の変換が4本に増える。
+   全列を使うなら `SELECT *` のほうが素直（contract で列を落とせば生成コードが変わり参照側が落ちるので、安全性は変わらない）。
+4. `POST /photos` の応答に `upload_url` を足すのは非破壊だったため、契約のメジャー更新は不要だった。
+   応答フィールドの追加は互換、削除・型変更は非互換という規約どおり。
+
+### 還流
+
+- [ ] internal-03: 整合性クラスの判定に「外部ストレージへの書き込み」の例を追加する。判定の軸は
+      「逆方向の不整合が無害かどうか」で、無害な側を先に書くと順序が決まる
+- [ ] internal-07: ローカル環境で S3 を模擬する場合、LocalStack S3 は署名付きURLの検証に使えない。
+      S3互換の実サーバ（RustFS / MinIO 等）を置く
+- [ ] internal-07: `:verb` のURLをシェルで組むときの罠（zsh の `$var:x` 修飾子）を注意書きとして残す

@@ -1,6 +1,5 @@
-// Package migrations は photo のスキーママイグレーション（expand / contract 二系統）を
-// バイナリに同梱し、`photo migrate` サブコマンドから適用する。
-// 履歴テーブルは系統ごとに分離する（photo_migrations_expand / photo_migrations_contract）。
+// Package migrations は photo のスキーママイグレーションを埋め込み、migrate サブコマンドから適用する。
+// 系統（expand / contract）ごとに履歴テーブルを分ける。
 package migrations
 
 import (
@@ -26,19 +25,18 @@ var files embed.FS
 type Series string
 
 const (
-	Expand   Series = "expand"   // 追加系。デプロイ前ステップで適用
+	Expand   Series = "expand"   // 追加系。デプロイ前に適用
 	Contract Series = "contract" // 削除・変更系。キュー消化として明示実行
 )
 
 const (
-	// lockWaitTimeout はメタデータロック / 行ロックの待ち上限（秒）。
-	// ロック待ちの行列に後続クエリが詰まる事故を防ぐため、適用側が短時間で自ら退く。
+	// lockWaitTimeout はロック待ちの上限（秒）。後続クエリが詰まる前に適用側が退く。
 	lockWaitTimeout = 5
 	maxAttempts     = 3
 	retryInterval   = 3 * time.Second
 )
 
-// Up は系統の未適用マイグレーションを全て適用する。ロック待ちで失敗した場合はリトライする。
+// Up は未適用のマイグレーションを全て適用する。ロック待ちで失敗した場合はリトライする。
 func Up(ctx context.Context, dsn string, s Series) error {
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -48,7 +46,7 @@ func Up(ctx context.Context, dsn string, s Series) error {
 		}
 		err = m.Up()
 		closeFn()
-		// 系統にファイルが1つもない（contract キューが空等）場合、golang-migrate はソース走査で ErrNotExist を返す。適用対象なしとして扱う。
+		// ファイルが1つもない系統では golang-migrate が ErrNotExist を返す。適用対象なしとして扱う
 		if err == nil || errors.Is(err, migrate.ErrNoChange) || errors.Is(err, fs.ErrNotExist) {
 			if err != nil {
 				slog.Info("migrate: no change", "series", s)
@@ -69,7 +67,7 @@ func Up(ctx context.Context, dsn string, s Series) error {
 	return fmt.Errorf("migrate %s up: %w", s, lastErr)
 }
 
-// Status は系統の現在バージョンと dirty フラグを返す。未適用なら version=0。
+// Status は現在バージョンと dirty フラグを返す。未適用なら 0。
 func Status(dsn string, s Series) (version uint, dirty bool, err error) {
 	m, closeFn, err := open(dsn, s)
 	if err != nil {
@@ -83,7 +81,7 @@ func Status(dsn string, s Series) (version uint, dirty bool, err error) {
 	return version, dirty, err
 }
 
-// openDB はDSNにロック待ちタイムアウトのセッション変数を付与して接続する。
+// openDB はロック待ちタイムアウトを付与して接続する。
 func openDB(dsn string) (*sql.DB, *mysql.Config, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
@@ -134,7 +132,7 @@ func open(dsn string, s Series) (*migrate.Migrate, func(), error) {
 	return m, func() { m.Close() }, nil
 }
 
-// isLockTimeout は MySQL のロック待ちタイムアウト（1205: innodb_lock_wait_timeout / 1206 / 3572: lock_wait_timeout 系）か判定する。
+// isLockTimeout は MySQL のロック待ちタイムアウトか判定する。
 func isLockTimeout(err error) bool {
 	var me *mysql.MySQLError
 	if !errors.As(err, &me) {

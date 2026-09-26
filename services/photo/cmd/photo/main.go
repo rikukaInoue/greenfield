@@ -2,17 +2,20 @@
 //
 //	photo                                  3リスナー（external / internal / admin）を起動
 //	photo migrate expand|contract|status   スキーママイグレーション（デプロイ前ステップ / キュー消化）
+//	photo reclaim                          アップロードが完了しないまま残った写真を回収する
 //
 // 差し込み口（core/authz 等）の実装パッケージをimportしてよいのはこのパッケージだけ。
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rikukaInoue/greenfield/services/photo/app"
 	"github.com/rikukaInoue/greenfield/services/photo/migrations"
@@ -26,6 +29,8 @@ func main() {
 	switch {
 	case len(os.Args) >= 2 && os.Args[1] == "migrate":
 		err = runMigrate(ctx, os.Args[2:])
+	case len(os.Args) >= 2 && os.Args[1] == "reclaim":
+		err = runReclaim(ctx, os.Args[2:])
 	default:
 		err = app.Run(ctx, app.ConfigFromEnv())
 	}
@@ -62,4 +67,28 @@ func runMigrate(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown migrate command %q (expand|contract|status)", args[0])
 	}
+}
+
+// runReclaim はアップロードが完了しないまま残った写真を、オブジェクトごと削除する。
+// 定期実行を前提とし、1回の実行で処理する件数に上限を置く。
+func runReclaim(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("reclaim", flag.ContinueOnError)
+	olderThan := fs.Duration("older-than", time.Hour, "この時間を超えて未完了の写真を対象にする")
+	limit := fs.Int("limit", 100, "1回で処理する上限")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	cfg := app.ConfigFromEnv()
+	deps, err := app.LocalDeps(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer deps.Close()
+
+	n, err := deps.Commands.Reclaim(ctx, *olderThan, *limit)
+	if err != nil {
+		return err
+	}
+	slog.Info("reclaim finished", "reclaimed", n, "older_than", olderThan.String())
+	return nil
 }

@@ -127,6 +127,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "image_url": {
+            "description": "画像取得用の署名付きURL。期限付き",
+            "type": "string"
+          },
           "owner_id": {
             "description": "投稿者のSubject",
             "examples": [
@@ -154,7 +158,7 @@
   "paths": {
     "/gear-items/{gear_item_id}/photos": {
       "get": {
-        "description": "一覧の行ごとに相手を呼ぶ形（HTTP越しのN+1）を避けるためのBatch取得API。",
+        "description": "呼び出し側の N+1 を避けるための Batch 取得API。",
         "operationId": "ListPhotosByGearItem",
         "parameters": [
           {

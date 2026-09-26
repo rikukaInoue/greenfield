@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// PrincipalKind は主体の種別。エンドユーザーとサービスを同一の枠組みで扱う。
+// PrincipalKind は主体の種別。
 type PrincipalKind int
 
 const (
@@ -13,11 +13,9 @@ const (
 	PrincipalService
 )
 
-// Principal は認証済み主体。ミドルウェアが検証結果をctxに積み、
-// ハンドラ・usecaseは PrincipalFrom(ctx) のみを参照する。
+// Principal は認証済み主体。ハンドラと usecase は PrincipalFrom でのみ参照する。
 type Principal struct {
-	// Subject はOPのidentity ID。ローカル実装でも不透明な識別子として扱い、
-	// 解析や別の値（email等）の代入をしない。
+	// Subject は OP の identity ID。不透明な識別子として扱い、解析や別の値の代入をしない。
 	Subject  string
 	Kind     PrincipalKind
 	ClientID string
@@ -28,12 +26,12 @@ type Principal struct {
 
 type principalKey struct{}
 
-// WithPrincipal はPrincipalをctxへ積む。認証ミドルウェアのみが呼ぶ。
+// WithPrincipal は Principal を ctx へ積む。認証ミドルウェアのみが呼ぶ。
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, p)
 }
 
-// PrincipalFrom はctxのPrincipalを返す。未認証ならokがfalse。
+// PrincipalFrom は ctx の Principal を返す。未認証なら ok が false。
 func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(principalKey{}).(Principal)
 	return p, ok

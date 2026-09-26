@@ -1,9 +1,5 @@
-// Package staticauthn は擬似トークン（devtoken）を検証する Authenticator。
-// OP（Keycloak）稼働前のローカル開発・CIで使い、Phase 3.3 で oidcauthn へ差し替える。
-//
-// 重要: Static であっても「トークンがなければ401」であり、素通しは作らない。
-// 認証ミドルウェアと Principal 伝播を internal を含む全経路で有効にしたまま先行開発するための実装である
-// （conventions/internal-04「ローカル実装は『緩い』より『本物らしく厳しい』に寄せる」）。
+// Package staticauthn は devtoken を検証する Authenticator を提供する。
+// 署名検証はしないが、トークンがなければ 401 を返す（素通しは作らない）。
 package staticauthn
 
 import (
@@ -17,10 +13,10 @@ import (
 	"github.com/rikukaInoue/greenfield/core/problem"
 )
 
-// Authenticator は devtoken を検証する authz.Authenticator。
+// Authenticator は devtoken を検証する。
 type Authenticator struct{}
 
-// New は Authenticator を返す。本番環境（ENV=production）では誤配線として起動を止める。
+// New は Authenticator を返す。ENV=production では誤配線として起動を止める。
 func New() (*Authenticator, error) {
 	if env := os.Getenv("ENV"); env == "production" || env == "prod" {
 		return nil, fmt.Errorf("staticauthn: ENV=%s では使用できない（本番は oidcauthn を配線する）", env)
@@ -28,12 +24,12 @@ func New() (*Authenticator, error) {
 	return &Authenticator{}, nil
 }
 
-// Middleware は Authorization ヘッダの擬似トークンを検証し、Principal を ctx へ積む。
-// トークンがない・壊れている場合は 401 を返し、ハンドラへ到達させない。
+// Middleware は Bearer トークンを検証して Principal を ctx へ積む。
+// トークンがない、または壊れていれば 401 を返す。
 func (a *Authenticator) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/healthz" { // ヘルスチェックは契約外・認証外
+			if r.URL.Path == "/healthz" { // 契約外・認証外
 				next.ServeHTTP(w, r)
 				return
 			}

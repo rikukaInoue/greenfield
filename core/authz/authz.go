@@ -29,24 +29,22 @@ type RelationWriter interface {
 	DeleteRelations(ctx context.Context, tuples []Tuple) error
 }
 
-// Authenticator は認証（裏: OIDC JWT検証）。
-// net/http標準形式のミドルウェアで提供し、フレームワークへは各自wrapして載せる。
+// Authenticator は認証を行う net/http ミドルウェアを提供する。
 type Authenticator interface {
 	Middleware() func(http.Handler) http.Handler
 }
 
-// AssuranceChecker は保証レベル検査（裏: OP）。
-// 「何ができるか」(Authorizer) と「どれだけ確かにその人か」(AssuranceChecker) は
-// 裏のシステムと差し替え単位が異なるため分ける。
+// AssuranceChecker は「どれだけ確かにその人か」を検査する。
+// Authorizer とは裏のシステムと差し替え単位が異なるため分けている。
 type AssuranceChecker interface {
 	Require(ctx context.Context, a Assurance) error
 	RequireAAL(ctx context.Context, level AAL) error
 }
 
-// Request は認可判定の要求。action名・resource type名は後にFGAモデルのrelationへ
-// マッピングされる契約であり、ドメインごとに一覧化して管理する。
+// Request は認可判定の要求。Action と ResourceType は FGA モデルの relation へ
+// マッピングされる契約であり、勝手に増やさない。
 type Request struct {
-	// Subject は判定対象の主体。空ならctxのPrincipalを用いる。
+	// Subject は判定対象の主体。空なら ctx の Principal を使う。
 	Subject      string
 	Action       string
 	ResourceType string
@@ -59,24 +57,23 @@ type Result struct {
 	Allowed bool
 }
 
-// Consistency は読み取り側の鮮度要求。Eventualな書き込みの窓の中で、
-// 窓の外の最新値を要求するオプションであり、対価としてレイテンシを払う。
+// Consistency は読み取りの鮮度要求。強めるとレイテンシを払う。
 type Consistency int
 
 const (
 	ConsistencyDefault Consistency = iota
-	// ConsistencyHigher はOpenFGAの HIGHER_CONSISTENCY 相当。
+	// ConsistencyHigher は OpenFGA の HIGHER_CONSISTENCY 相当。
 	ConsistencyHigher
 )
 
-// Tuple はReBACの関係データ。Subject / Object の表記は Ref 系ヘルパーで作る。
+// Tuple は ReBAC の関係データ。Subject / Object の表記は Ref 系ヘルパーで作る。
 type Tuple struct {
 	Subject  string // 例: user:<sub>
 	Relation string // 例: owner
 	Object   string // 例: order:<id>
 }
 
-// AAL は認証保証レベル（NIST SP 800-63B 参考の社内定義）。
+// AAL は認証保証レベル。
 type AAL int
 
 const (
@@ -87,6 +84,6 @@ const (
 // Assurance は保証レベルの要求。
 type Assurance struct {
 	AAL AAL
-	// MaxAge は認証からの経過時間の上限。0なら制限なし。
+	// MaxAge は認証からの経過時間の上限。0 なら無制限。
 	MaxAge time.Duration
 }

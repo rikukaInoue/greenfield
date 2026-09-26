@@ -9,6 +9,19 @@
             "maxLength": 1000,
             "type": "string"
           },
+          "content_type": {
+            "description": "アップロードする画像の種類",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "image/avif"
+            ],
+            "examples": [
+              "image/jpeg"
+            ],
+            "type": "string"
+          },
           "gear_item_id": {
             "description": "使用機材（gear の item ID）。指定すると gear への紐付けが pending で始まる",
             "format": "int64",
@@ -26,7 +39,106 @@
           }
         },
         "required": [
-          "caption"
+          "caption",
+          "content_type"
+        ],
+        "type": "object"
+      },
+      "CreatePhotoOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "caption": {
+            "description": "キャプション",
+            "examples": [
+              "朝の光"
+            ],
+            "type": "string"
+          },
+          "created_at": {
+            "description": "投稿時刻",
+            "format": "date-time",
+            "type": "string"
+          },
+          "gear_item_id": {
+            "description": "使用機材（gear の item ID）",
+            "examples": [
+              42
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "gear_name": {
+            "description": "使用機材の表示名（ReplicaView 由来。業務判断に使わない）",
+            "examples": [
+              "X-T5"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "写真ID",
+            "examples": [
+              1
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "image_url": {
+            "description": "画像取得用の署名付きURL。期限付き",
+            "type": "string"
+          },
+          "owner_id": {
+            "description": "投稿者のSubject",
+            "examples": [
+              "u_01H..."
+            ],
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "画像のバイト数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "description": "画像のアップロード状態",
+            "enum": [
+              "pending_upload",
+              "ready"
+            ],
+            "examples": [
+              "ready"
+            ],
+            "type": "string"
+          },
+          "upload_expires_at": {
+            "description": "署名URLの有効期限",
+            "format": "date-time",
+            "type": "string"
+          },
+          "upload_url": {
+            "description": "画像アップロード用の署名付きURL。Content-Type ヘッダを content_type と同じ値で送る",
+            "type": "string"
+          },
+          "visibility": {
+            "description": "公開状態",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "examples": [
+              "public"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_url",
+          "upload_expires_at",
+          "id",
+          "owner_id",
+          "caption",
+          "visibility",
+          "status",
+          "created_at"
         ],
         "type": "object"
       },
@@ -169,10 +281,30 @@
             "format": "int64",
             "type": "integer"
           },
+          "image_url": {
+            "description": "画像取得用の署名付きURL。期限付き",
+            "type": "string"
+          },
           "owner_id": {
             "description": "投稿者のSubject",
             "examples": [
               "u_01H..."
+            ],
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "画像のバイト数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "description": "画像のアップロード状態",
+            "enum": [
+              "pending_upload",
+              "ready"
+            ],
+            "examples": [
+              "ready"
             ],
             "type": "string"
           },
@@ -193,6 +325,7 @@
           "owner_id",
           "caption",
           "visibility",
+          "status",
           "created_at"
         ],
         "type": "object"
@@ -304,7 +437,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Photo"
+                  "$ref": "#/components/schemas/CreatePhotoOutputBody"
                 }
               }
             },
@@ -371,6 +504,16 @@
               "format": "int64",
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "description": "作成直後でも確実に見えるよう、認可判定の鮮度を上げる",
+            "explode": false,
+            "in": "query",
+            "name": "fresh",
+            "schema": {
+              "description": "作成直後でも確実に見えるよう、認可判定の鮮度を上げる",
+              "type": "boolean"
             }
           }
         ],
@@ -442,9 +585,105 @@
         ]
       }
     },
+    "/photos/{id}:commit": {
+      "post": {
+        "description": "署名URLへの PUT が終わったら呼ぶ。画像の実体が確認できなければ確定しない。",
+        "operationId": "CommitPhoto",
+        "parameters": [
+          {
+            "description": "写真ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "写真ID",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Photo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "画像のアップロード完了を確定する",
+        "tags": [
+          "photos"
+        ]
+      }
+    },
     "/photos/{id}:publish": {
       "post": {
-        "description": "純粋な状態遷移のため :verb（実体を生む操作は名詞のサブリソースにする）。",
+        "description": "純粋な状態遷移のため :verb を使う。",
         "operationId": "PublishPhoto",
         "parameters": [
           {

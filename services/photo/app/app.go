@@ -1,9 +1,5 @@
-// Package app は photo サービスの組み立て（合成ルート）と起動を担う。
-// cmd/photo と dev/allinone の両方から同じ Run を呼ぶ（起動手順を二重に持たない）。
-//
-// 差し込み口（core/authz）の**実装**パッケージを import してよいのはこのパッケージと cmd/* だけである。
-// usecase / handler は interface しか見ないため、本番アダプタへの差し替え（Phase 3.3）の diff は
-// このファイルに閉じる（#18）。
+// Package app は photo サービスの合成ルート。cmd/photo と dev/allinone が共通で使う。
+// 差し込み口の実装を import してよいのはここと cmd/*（docs/adr/0003-app-composition-root.md）。
 package app
 
 import (
@@ -15,63 +11,75 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // localauthz ストアへの接続に使う driver は合成ルートが選ぶ
+	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
 
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/authz/localauthz"
 	"github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
 	"github.com/rikukaInoue/greenfield/core/authz/staticauthn"
+	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/external"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
+	"github.com/rikukaInoue/greenfield/services/photo/readmodel"
+	"github.com/rikukaInoue/greenfield/services/photo/repository"
+	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 )
 
-// Version は OpenAPI の info.version。破壊的変更時のメジャー更新は oasdiff と連動させる
-// （conventions/api-design.md §3.4）。
+// Version は OpenAPI の info.version。破壊的変更時はメジャーを上げる。
 const Version = "1.0.0"
 
-// InternalScope は internal リスナーが要求するスコープ。サービス間トークンに付与する。
+// InternalScope は internal リスナーが要求するスコープ。
 const InternalScope = "internal:photo"
 
-// actionRelations は action（プロダクトが使う語彙）→ FGAモデルの relation の対応。
-// 本番では authzサービス内に閉じる知識であり、ここではローカル実装へ同じ表を渡す。
-// action名・resource type名は後に FGA の relation へマッピングされる契約であり、増やすときは一覧を更新する。
+// actionRelations は photo の action と FGA モデルの relation の対応。
 var actionRelations = localauthz.Mapping{
-	"photo.view":    "viewer",
-	"photo.edit":    "editor",
-	"photo.publish": "editor",
-	"photo.delete":  "owner",
+	usecase.ActionView:    "viewer",
+	usecase.ActionEdit:    "editor",
+	usecase.ActionPublish: "editor",
+	usecase.ActionDelete:  "owner",
+	usecase.ActionOperate: "operator",
 }
 
-// Config はリスナーの待ち受けアドレスと依存先。アプリが知るのはListenするポートだけであり、
-// TLS・ホスト名・到達制御はインフラの持ち物（conventions/internal-07）。
+// Config はリスナーの待ち受けアドレスと依存先。
 type Config struct {
 	ExternalAddr string
 	InternalAddr string
 	AdminAddr    string
-	// LocalAuthzDSN は擬似ReBACのタプル置き場。サービスのDBとは別（本番の authzサービス相当）。
+	// DSN は photo の業務データ。アプリ実行用のユーザーで接続する。
+	DSN string
+	// LocalAuthzDSN は擬似ReBAC のタプル置き場。サービスのDBとは別。
 	LocalAuthzDSN string
+	// Images は画像オブジェクトの置き場所。
+	Images blobstore.Config
 }
 
-// ConfigFromEnv は PHOTO_{EXTERNAL,INTERNAL,ADMIN}_ADDR から設定を読む。
-// 既定はポート割当表のとおり :8080 / :8081 / :8082。
+// ConfigFromEnv は環境変数から設定を読む。
 func ConfigFromEnv() Config {
 	return Config{
 		ExternalAddr:  envOr("PHOTO_EXTERNAL_ADDR", ":8080"),
 		InternalAddr:  envOr("PHOTO_INTERNAL_ADDR", ":8081"),
 		AdminAddr:     envOr("PHOTO_ADMIN_ADDR", ":8082"),
+		DSN:           envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo?parseTime=true"),
 		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
+		Images: blobstore.Config{
+			Bucket:          envOr("PHOTO_IMAGE_BUCKET", "photo-images"),
+			Region:          envOr("AWS_REGION", "us-east-1"),
+			Endpoint:        envOr("AWS_ENDPOINT_URL", "http://localhost:9000"),
+			AccessKeyID:     envOr("AWS_ACCESS_KEY_ID", "test"),
+			SecretAccessKey: envOr("AWS_SECRET_ACCESS_KEY", "testtest"),
+		},
 	}
 }
 
-// Deps は差し込み口の実装一式。Phase 3.3 では中身だけが oidcauthn / authzhttp に変わる。
+// Deps は組み立て済みの依存一式。
 type Deps struct {
 	Authenticator authz.Authenticator
-	Authorizer    authz.Authorizer
-	Lister        authz.Lister
-	Relations     authz.RelationWriter
 	Assurance     authz.AssuranceChecker
+	Commands      *usecase.PhotoCommands
+	Queries       *usecase.PhotoQueries
 
 	closers []func() error
 }
@@ -85,53 +93,54 @@ func (d *Deps) Close() error {
 	return err
 }
 
-// LocalDeps はローカル開発・CI用の実装を組み立てる（StaticAuthenticator + 擬似ReBAC）。
-// 「緩い」実装ではなく「本物らしく厳しい」実装である点が重要:
-// トークンがなければ401、所有者タプルがなければ不許可、一覧は ListAccessible が返したIDのみ。
-func LocalDeps(cfg Config) (*Deps, error) {
+// LocalDeps はローカル開発・CI用の実装を組み立てる。
+func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	authn, err := staticauthn.New()
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("mysql", cfg.LocalAuthzDSN)
+	authzDB, err := sql.Open("mysql", cfg.LocalAuthzDSN)
 	if err != nil {
 		return nil, fmt.Errorf("localauthz store: %w", err)
 	}
-	store := localauthz.New(db, actionRelations)
+	store := localauthz.New(authzDB, actionRelations)
+
+	db, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("photo db: %w", err)
+	}
+	images, err := blobstore.NewS3Store(ctx, cfg.Images)
+	if err != nil {
+		return nil, err
+	}
 	return &Deps{
 		Authenticator: authn,
-		Authorizer:    store,
-		Lister:        store,
-		Relations:     store,
 		Assurance:     simpleassurance.New(),
-		closers:       []func() error{db.Close},
+		Commands: usecase.NewPhotoCommands(
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, usecase.EnvFaults{}),
+		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
+		closers: []func() error{db.Close, authzDB.Close},
 	}, nil
 }
 
-// APIs はリスナー3系統の huma API を組み立てて返す。
-// OpenAPI の生成（dev/genapi）とサーバ起動で同じ組み立てを共有するため、Run から分けてある。
-// deps が nil の場合は認証ミドルウェアを付けない（スペック生成専用の経路）。
+// APIs はリスナー3系統の huma API を組み立てる。スペック生成とサーバ起動で共有する。
+// deps が nil なら認証ミドルウェアを付けない（スペック生成専用）。
 func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
-	var authn authz.Authenticator
-	var azr authz.Authorizer
-	var lister authz.Lister
-	var assurance authz.AssuranceChecker
-	if deps != nil {
-		authn, azr, lister, assurance = deps.Authenticator, deps.Authorizer, deps.Lister, deps.Assurance
+	if deps == nil {
+		deps = &Deps{}
 	}
-	base := httpapi.Options{Service: "photo", Version: Version, Authenticator: authn}
+	base := httpapi.Options{Service: "photo", Version: Version, Authenticator: deps.Authenticator}
 
 	ext := httpapi.New(httpapi.External, base)
-	external.Register(ext, external.Deps{Authorizer: azr, Lister: lister, Assurance: assurance})
+	external.Register(ext, external.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
 
 	adm := httpapi.New(httpapi.Admin, base)
-	admin.Register(adm, admin.Deps{Assurance: assurance})
+	admin.Register(adm, admin.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
 
-	// internal は「プライベートだから無認証」を採らない: 認証に加えてスコープを要求する（#27）。
 	intlOpts := base
 	intlOpts.RequireScope = InternalScope
 	intl := httpapi.New(httpapi.Internal, intlOpts)
-	internalapi.Register(intl, internalapi.Deps{Authorizer: azr, Lister: lister})
+	internalapi.Register(intl, internalapi.Deps{Queries: deps.Queries})
 
 	return map[httpapi.Listener]httpapi.API{
 		httpapi.External: ext,
@@ -142,7 +151,7 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 
 // Run は3リスナーを起動し、ctxのキャンセルまたはいずれかのリスナーの失敗で全て停止する。
 func Run(ctx context.Context, cfg Config) error {
-	deps, err := LocalDeps(cfg)
+	deps, err := LocalDeps(ctx, cfg)
 	if err != nil {
 		return err
 	}
