@@ -8,6 +8,20 @@
 -- platform（authz 等の自作基盤。Phase 3）
 CREATE DATABASE IF NOT EXISTS platform CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
+-- localauthz（擬似ReBACのタプル置き場。Phase 3.2 で OpenFGA + authzサービスへ差し替える）。
+-- サービスのDBとは別にすることで、本番同様「サービスのトランザクションに参加しない」状態を再現する
+-- （業務側のロールバックでタプルは消えない = 孤児タプル #6 を再現できる）。
+CREATE DATABASE IF NOT EXISTS localauthz CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE TABLE IF NOT EXISTS localauthz.relation_tuples (
+    subject  VARCHAR(255) NOT NULL COMMENT 'user:<sub> / service:<client_id>',
+    relation VARCHAR(64)  NOT NULL COMMENT 'owner / operator / ...',
+    object   VARCHAR(255) NOT NULL COMMENT 'photo:<id> / platform:main',
+    PRIMARY KEY (subject, relation, object),
+    KEY idx_tuples_object (object, relation)
+);
+CREATE USER IF NOT EXISTS 'localauthz'@'%' IDENTIFIED BY 'localauthz';
+GRANT SELECT, INSERT, UPDATE, DELETE ON localauthz.* TO 'localauthz'@'%';
+
 -- photo
 CREATE DATABASE IF NOT EXISTS photo CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 CREATE USER IF NOT EXISTS 'photo_app'@'%' IDENTIFIED BY 'photo_app';

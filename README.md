@@ -41,5 +41,6 @@ mise run api                 # huma の型から api/<service>/<listener>.openap
 mise run api:breaking        # base に対する破壊的変更を検出（メジャー未更新なら失敗）
 mise run schema:check        # db/schema.sql がマイグレーションと一致しているか（CI）
 mise run run                 # 全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）
+mise run token -- --user alice   # 開発用トークン（認証は全リスナーで有効。トークンなしは 401）
 mise run scaffold <name>     # 新サービスの骨格を生成（ポートは +10 で採番）
 ```

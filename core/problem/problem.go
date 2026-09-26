@@ -5,6 +5,7 @@
 package problem
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -16,6 +17,31 @@ type Error struct {
 	// Code は機械可読のエラーコード。`<domain>.<reason>`（例: photo.not_found）または
 	// フレームワーク共通の汎用コード（validation_failed 等）。
 	Code string `json:"code" example:"photo.not_found" doc:"機械可読のエラーコード"`
+
+	// Headers は応答に付ける追加ヘッダ（RFC 9470 の WWW-Authenticate 等）。応答本文には出さない。
+	Headers map[string]string `json:"-"`
+}
+
+// GetHeaders は huma.HeadersError を満たし、ハンドラから返したときに応答ヘッダへ反映させる。
+func (e *Error) GetHeaders() http.Header {
+	if len(e.Headers) == 0 {
+		return nil
+	}
+	h := make(http.Header, len(e.Headers))
+	for k, v := range e.Headers {
+		h.Set(k, v)
+	}
+	return h
+}
+
+// Write は huma のハンドラ外（ミドルウェア等）から problem+json を直接書き出す。
+func Write(w http.ResponseWriter, _ *http.Request, e *Error) {
+	for k, v := range e.Headers {
+		w.Header().Set(k, v)
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(e.Status)
+	_ = json.NewEncoder(w).Encode(e)
 }
 
 // 汎用コード。ドメイン固有のコードは各サービスで `<domain>.<reason>` として定義する。

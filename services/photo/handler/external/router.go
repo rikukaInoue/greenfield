@@ -9,14 +9,29 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/core/problem"
 )
 
+// Deps はハンドラが使う差し込み口。実装（localauthz / oidcauthn 等）は app/ が注入する。
+// ハンドラは interface しか見ないため、本番アダプタへの差し替えで本ファイルは変わらない（#18）。
+type Deps struct {
+	Authorizer authz.Authorizer
+	Lister     authz.Lister
+	Assurance  authz.AssuranceChecker
+}
+
+type handlers struct {
+	deps Deps
+}
+
 // Register は external リスナーのルートを登録する。
 // エンドポイントは CQS をそのまま反映する: コマンドはユースケース単位（:verb / 名詞サブリソース）、
 // クエリは Read Model 単位の GET。OperationID は対応する usecase 名と一致させる（生成クライアントのメソッド名になる）。
-func Register(api httpapi.API) {
+func Register(api httpapi.API, deps Deps) {
+	h := &handlers{deps: deps}
+
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "CreatePhoto",
 		Method:      http.MethodPost,
@@ -24,7 +39,7 @@ func Register(api httpapi.API) {
 		Summary:     "写真を投稿する",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
-	}, createPhoto)
+	}, h.createPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "PublishPhoto",
@@ -34,7 +49,7 @@ func Register(api httpapi.API) {
 		Description: "純粋な状態遷移のため :verb（実体を生む操作は名詞のサブリソースにする）。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
-	}, publishPhoto)
+	}, h.publishPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "GetPhotoDetail",
@@ -43,7 +58,7 @@ func Register(api httpapi.API) {
 		Summary:     "写真の詳細（Read Model）",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
-	}, getPhotoDetail)
+	}, h.getPhotoDetail)
 
 	huma.Register(api.Huma, huma.Operation{
 		OperationID: "ListPhotos",
@@ -53,7 +68,7 @@ func Register(api httpapi.API) {
 		Description: "ListAccessible で得たIDを WHERE IN で絞るため、他人の写真は不可視。",
 		Tags:        []string{"photos"},
 		Errors:      []int{http.StatusUnauthorized},
-	}, listPhotos)
+	}, h.listPhotos)
 }
 
 // Photo は写真の表現（Read Model → 応答 DTO）。
@@ -113,18 +128,18 @@ type ListPhotosOutput struct {
 // 実装は Phase 1（1.1 Atomic / 1.2 CQS / 1.3 認可呼び出し）で入れる。
 // usecase を呼ぶ形（handler → usecase → Entity）は最初から固定しておく。
 
-func createPhoto(ctx context.Context, in *CreatePhotoInput) (*CreatePhotoOutput, error) {
+func (h *handlers) createPhoto(ctx context.Context, in *CreatePhotoInput) (*CreatePhotoOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "CreatePhoto は Phase 1.1 で実装する")
 }
 
-func publishPhoto(ctx context.Context, in *PublishPhotoInput) (*PublishPhotoOutput, error) {
+func (h *handlers) publishPhoto(ctx context.Context, in *PublishPhotoInput) (*PublishPhotoOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "PublishPhoto は Phase 1.1 で実装する")
 }
 
-func getPhotoDetail(ctx context.Context, in *GetPhotoDetailInput) (*GetPhotoDetailOutput, error) {
+func (h *handlers) getPhotoDetail(ctx context.Context, in *GetPhotoDetailInput) (*GetPhotoDetailOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "GetPhotoDetail は Phase 1.2 で実装する")
 }
 
-func listPhotos(ctx context.Context, in *ListPhotosInput) (*ListPhotosOutput, error) {
+func (h *handlers) listPhotos(ctx context.Context, in *ListPhotosInput) (*ListPhotosOutput, error) {
 	return nil, problem.New(http.StatusNotImplemented, "photo.not_implemented", "ListPhotos は Phase 1.2 で実装する")
 }
