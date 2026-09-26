@@ -107,8 +107,23 @@ jobs:
         working-directory: frontend/apps/web
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: E2E 用に photo と SSR を起動する
+        run: |
+          go build -o "$RUNNER_TEMP/allinone" ./dev/allinone
+          nohup "$RUNNER_TEMP/allinone" > "$RUNNER_TEMP/allinone.log" 2>&1 &
+          (cd frontend/apps/web && PORT=3000 nohup pnpm start > "$RUNNER_TEMP/web.log" 2>&1 &)
+          for url in http://localhost:8080/healthz http://localhost:3000/login; do
+            for i in $(seq 1 60); do curl -sf -o /dev/null "$url" && continue 2; sleep 1; done
+            echo "$url が起動しない" >&2; exit 1
+          done
+
       - name: ブラウザ E2E（投稿の3段 / #17 トークン非露出・CORS 閉）
+        timeout-minutes: 10
         run: mise run --quiet web:e2e
+
+      - name: E2E のサーバーログ
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/allinone.log" "$RUNNER_TEMP/web.log"
 
       - name: E2E のトレースを保存する
         if: failure()

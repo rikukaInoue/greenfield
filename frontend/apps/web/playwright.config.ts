@@ -10,12 +10,13 @@ export default defineConfig({
   reporter: ci ? [["github"], ["list"]] : "list",
   use: { baseURL: "http://localhost:3000", trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // CI では前段のステップで起動済みのものを使う（Playwright に子プロセスを持たせるとジョブが終わらない）。
   webServer: [
     {
       command: "go run ./dev/allinone",
       cwd: repoRoot,
       url: "http://localhost:8080/healthz",
-      reuseExistingServer: !ci,
+      reuseExistingServer: true,
       timeout: 180_000,
     },
     {
@@ -23,7 +24,7 @@ export default defineConfig({
       command: "pnpm build && pnpm start",
       url: "http://localhost:3000/login",
       env: { PORT: "3000" },
-      reuseExistingServer: !ci,
+      reuseExistingServer: true,
       timeout: 180_000,
     },
   ],
