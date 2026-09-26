@@ -1,6 +1,7 @@
 # ツールのバージョン固定とタスク定義。`mise install` で揃え、`mise run` でタスク一覧から選べる。
 [tools]
 go = "1.26.6"
+sqlc = "1.31.1"
 
 [env]
 COMPOSE_FILE = "deploy/compose/compose.yaml"
@@ -40,8 +41,37 @@ description = "各モジュールを GOWORK=off で go mod tidy"
 run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exit 1; done'
 
 [tasks.check]
-description = "fmt + build + vet + test をまとめて（CI 相当）"
-depends = ["fmt", "build", "vet", "test"]
+description = "fmt + build + vet + test + lint:queries をまとめて（CI 相当。schema:check は DB が要るので別）"
+depends = ["fmt", "build", "vet", "test", "lint:queries", "sqlc:check"]
+
+# --- sqlc とスキーマ整合 ---
+
+[tasks.services]
+description = "services/ 配下のサービスモジュール一覧（*-client を除く）"
+hide = true
+run = "awk '/^\\t\\.\\/services\\/[a-z0-9]+$/{print substr($1,3)}' go.work"
+
+[tasks.sqlc]
+description = "各サービスで sqlc generate（生成型は repository/internal/sqlcgen）"
+run = 'for s in $(mise run services); do echo "== $s"; (cd $s && sqlc generate) || exit 1; done'
+
+[tasks."sqlc:check"]
+description = "sqlc の生成物がクエリ・スキーマと一致しているか検証（CI）"
+run = 'for s in $(mise run services); do echo "== $s"; (cd $s && sqlc diff) || exit 1; done'
+
+[tasks."schema:dump"]
+description = "空DBにマイグレーション全適用 → mysqldump で db/schema.sql を更新（sqlc の入力）"
+depends = ["db:up"]
+run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $s) --write || exit 1; done'
+
+[tasks."schema:check"]
+description = "db/schema.sql がマイグレーションと一致しているか検証（CI）"
+depends = ["db:up"]
+run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $s) --check || exit 1; done'
+
+[tasks."lint:queries"]
+description = "クエリが自ドメインのテーブルだけを参照しているか検証（許可リスト = db/schema.sql）"
+run = "go run ./dev/querylint $(mise run services)"
 
 # --- ローカルインフラ（docker compose） ---
 

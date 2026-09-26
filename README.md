@@ -35,6 +35,9 @@ mise run build:ws            # ワークスペースで全モジュールをビ�
 mise run check               # fmt + build + vet + test を GOWORK=off で並列実行（CI相当。境界チェックはこちらでしか効かない）
 mise run db:up               # mysql:8.4 を起動（database/ユーザー/GRANT は deploy/compose/mysql/init）
 mise run migrate             # 各サービスの expand を適用（<name> migrate expand|contract|status）
+mise run schema:dump         # マイグレーション全適用後の dump で db/schema.sql（sqlc の入力）を更新
+mise run sqlc                # sqlc generate（生成型は repository/internal/sqlcgen に閉じる）
+mise run schema:check        # db/schema.sql がマイグレーションと一致しているか（CI）
 mise run run                 # 全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）
 mise run scaffold <name>     # 新サービスの骨格を生成（ポートは +10 で採番）
 ```

@@ -1,0 +1,5 @@
+# db/（sqlc の入力）
+
+- `schema.sql`: マイグレーション（expand + contract）全適用後の `mysqldump --no-data`。**手書きしない**。`mise run schema:dump` で更新し、CI は `mise run schema:check` で一致を検証する
+- `queries/*.sql`: sqlc のクエリ。参照できるのは自ドメイン（{{.Name}}）のテーブルのみ。他ドメインは `<name>-client` 経由の HTTP か ReplicaView
+- 生成先は `repository/internal/sqlcgen`（Go の internal 規則で repository/ の外から import 不可）。`mise run sqlc` で再生成
