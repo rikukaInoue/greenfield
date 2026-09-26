@@ -11,6 +11,8 @@ function required(name: string, devDefault: string): string {
 export const env = {
   photoApiUrl: required("PHOTO_API_URL", "http://localhost:8080"),
   sessionSecret: required("SESSION_SECRET", "dev-session-secret"),
+  flagdHost: process.env.FLAGD_HOST ?? "localhost",
+  flagdPort: Number(process.env.FLAGD_PORT ?? 8013),
   secureCookie: process.env.SECURE_COOKIE === "true",
   // devLogin は devtoken による擬似ログインを許可するか。Keycloak 配線後は false にする。
   devLogin: !production && process.env.DEV_LOGIN !== "false",

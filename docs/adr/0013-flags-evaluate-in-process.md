@@ -57,7 +57,13 @@ SSE を実装しておらずキャッシュも持たないため、リクエス�
 - CI では flagd を立てない。従来 CI の flagd は `services:` に `command` を渡せず定義を配れないため、
   **立てても何も検査しない飾りだった**（監査 B-2）。`file` で定義を直接読めば、
   プロバイダ登録から評価までの経路がそのまま通る
-- compose が公開するポートは `:8013` から **`:8015`**（sync）へ変わる
+- compose は **`:8015`（sync）と `:8013`（リモート評価）の両方**を公開する。
+  Go 側は `:8015` を使うが、SSR（`frontend/apps/web/app/.server/flags.ts`）は現状 `:8013` の
+  `FlagdProvider` を使っているため当面は両方必要。規約は「SSR側の判定でも同じkeyを使って
+  表示とAPIの判定を一致させる」と定めるので、評価の場所が違う状態を長く残さない
+- **取得元は将来 AppConfig Agent（`localhost:2772` の REST）へ寄せる見込み**。
+  Agent 方式も「定義を受け取ってプロセス内で評価する」形なので本 ADR の決定は変わらず、
+  `flagsource` に Kind を1つ足すだけで済む。その際に flagd を compose から落とす
 - Phase 7 で AppConfig プロバイダを差し替えるとき、**評価の場所が変わらない**。
   差し替えは `flagsource` の 1 ケース追加に閉じる
 
