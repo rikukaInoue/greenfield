@@ -31,6 +31,12 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
+      flagd:
+        image: ghcr.io/open-feature/flagd:latest
+        ports:
+          - 8013:8013
+        # services: では command を指定できないため、フラグ定義は既定の空状態になる。
+        # アプリは宣言した既定値へ倒れるので、フラグ依存のテストは ctx へ直接値を積む。
       rustfs:
         image: rustfs/rustfs:latest
         env:

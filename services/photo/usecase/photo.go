@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rikukaInoue/greenfield/core/authz"
+	"github.com/rikukaInoue/greenfield/core/flags"
 	"github.com/rikukaInoue/greenfield/services/photo/domain"
 )
 
@@ -32,6 +33,9 @@ var ErrForbidden = errors.New("photo: 権限がない")
 // ErrObjectNotFound は画像オブジェクトが存在しないことを表す。
 var ErrObjectNotFound = errors.New("photo: 画像オブジェクトがない")
 
+// ErrUploadsDisabled はキルスイッチにより投稿が止まっていることを表す。
+var ErrUploadsDisabled = errors.New("photo: 投稿を一時停止中")
+
 // PhotoRepository は Entity の永続化。実装は repository パッケージが持つ。
 type PhotoRepository interface {
 	Create(ctx context.Context, p *domain.Photo) error
@@ -44,6 +48,14 @@ type PhotoRepository interface {
 
 // uploadTTL は署名URLの有効期限。
 const uploadTTL = 15 * time.Minute
+
+// フラグ名。`<種類>.<機能名>` の形で、種類は寿命を表す。
+const (
+	// FlagDisableUploads はストレージ障害時の縮退用キルスイッチ（長期）。
+	FlagDisableUploads = "ops.photo_disable_uploads"
+	// FlagCaptionToTitle は caption → title の改名の読み切替（Phase 1.5 で削除）。
+	FlagCaptionToTitle = "release.photo_caption_to_title"
+)
 
 // PhotoCommands は写真の更新系ユースケース。
 type PhotoCommands struct {
@@ -82,6 +94,9 @@ type CreatePhotoResult struct {
 // オブジェクトストレージは外部システムでロールバックできないため、鍵の予約だけを先に行い、
 // 実体の存在確認は Commit で行う。
 func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*CreatePhotoResult, error) {
+	if flags.Bool(ctx, FlagDisableUploads) {
+		return nil, ErrUploadsDisabled
+	}
 	p, ok := authz.PrincipalFrom(ctx)
 	if !ok {
 		return nil, ErrForbidden

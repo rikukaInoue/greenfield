@@ -1,0 +1,23 @@
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "ops.photo_disable_uploads": {
+      "description": "キルスイッチ。ONの間は写真の新規投稿（署名URL発行）を止める。ストレージ障害時の縮退用",
+      "state": "ENABLED",
+      "variants": {
+        "on": true,
+        "off": false
+      },
+      "defaultVariant": "off"
+    },
+    "release.photo_caption_to_title": {
+      "description": "caption から title への改名の読み切替。Phase 1.5 で段階展開する。期限: 1.5e 完了時に削除",
+      "state": "ENABLED",
+      "variants": {
+        "on": true,
+        "off": false
+      },
+      "defaultVariant": "off"
+    }
+  }
+}

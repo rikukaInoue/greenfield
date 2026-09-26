@@ -3,6 +3,8 @@
 go = "1.26.6"
 sqlc = "1.31.1"
 "ubi:oasdiff/oasdiff" = "1.32.1"
+node = "24.21.0"
+pnpm = "12.6.0"
 
 [env]
 COMPOSE_FILE = "deploy/compose/compose.yaml"
@@ -99,8 +101,8 @@ description = "オブジェクトストレージ（RustFS）を起動しバケ�
 run = ['[ -n "${CI:-}" ] || docker compose up -d --wait rustfs', 'go run ./dev/s3admin ensure-buckets']
 
 [tasks."infra:up"]
-description = "ローカル依存を一括起動（mysql + RustFS + マイグレーション）"
-depends = ["db:up", "s3:up"]
+description = "ローカル依存を一括起動（mysql + RustFS + flagd + マイグレーション）"
+depends = ["db:up", "s3:up", "flags:up"]
 run = "go run ./services/photo/cmd/photo migrate expand"
 
 [tasks."db:down"]
@@ -119,6 +121,14 @@ run = "docker exec -it greenfield-mysql mysql -uroot -proot"
 description = "全サービスの expand を適用"
 depends = ["db:up"]
 run = "go run ./services/photo/cmd/photo migrate expand"
+
+[tasks."flags:up"]
+description = "フィーチャーフラグ（flagd）を起動する。CI では起動済みとみなす"
+run = '[ -n "${CI:-}" ] || docker compose up -d flagd'
+
+[tasks.flags]
+description = "フラグの現在値を表示する"
+run = "docker compose exec -T flagd cat /etc/flagd/flags.json 2>/dev/null || cat deploy/compose/flagd/flags.json"
 
 [tasks.reclaim]
 description = "アップロード未完了の写真を回収する: mise run reclaim -- --older-than 1m"

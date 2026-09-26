@@ -1,0 +1,17 @@
+{
+  "name": "@greenfield/photo-api",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "gen": "openapi-typescript ../../../api/photo/external.openapi.json -o src/external.gen.ts",
+    "gen:check": "openapi-typescript ../../../api/photo/external.openapi.json -o src/external.gen.ts --check",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3"
+  }
+}

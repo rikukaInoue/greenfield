@@ -7,9 +7,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	"github.com/open-feature/go-sdk/openfeature"
 
 	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
 
@@ -18,6 +23,7 @@ import (
 	"github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
 	"github.com/rikukaInoue/greenfield/core/authz/staticauthn"
 	"github.com/rikukaInoue/greenfield/core/consistency"
+	"github.com/rikukaInoue/greenfield/core/flags"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
 	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
@@ -33,6 +39,13 @@ const Version = "1.0.0"
 
 // InternalScope は internal リスナーが要求するスコープ。
 const InternalScope = "internal:photo"
+
+// flagSet はこのサービスが評価するフラグの宣言。既定値はフラグ基盤が停止していても
+// 安全な側（既存動作）にする。
+var flagSet = flags.Set{
+	{Name: usecase.FlagDisableUploads, Default: false},
+	{Name: usecase.FlagCaptionToTitle, Default: false},
+}
 
 // actionRelations は photo の action と FGA モデルの relation の対応。
 var actionRelations = localauthz.Mapping{
@@ -54,6 +67,9 @@ type Config struct {
 	LocalAuthzDSN string
 	// Images は画像オブジェクトの置き場所。
 	Images blobstore.Config
+	// FlagdHost / FlagdPort はフィーチャーフラグの評価先。
+	FlagdHost string
+	FlagdPort int
 }
 
 // ConfigFromEnv は環境変数から設定を読む。
@@ -64,6 +80,8 @@ func ConfigFromEnv() Config {
 		AdminAddr:     envOr("PHOTO_ADMIN_ADDR", ":8082"),
 		DSN:           envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo?parseTime=true"),
 		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
+		FlagdHost:     envOr("FLAGD_HOST", "localhost"),
+		FlagdPort:     envIntOr("FLAGD_PORT", 8013),
 		Images: blobstore.Config{
 			Bucket:          envOr("PHOTO_IMAGE_BUCKET", "photo-images"),
 			Region:          envOr("AWS_REGION", "us-east-1"),
@@ -78,6 +96,7 @@ func ConfigFromEnv() Config {
 type Deps struct {
 	Authenticator authz.Authenticator
 	Assurance     authz.AssuranceChecker
+	Flags         *flags.Evaluator
 	Commands      *usecase.PhotoCommands
 	Queries       *usecase.PhotoQueries
 
@@ -113,9 +132,18 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, err
 	}
+	provider, err := flagd.NewProvider(flagd.WithHost(cfg.FlagdHost), flagd.WithPort(uint16(cfg.FlagdPort)))
+	if err != nil {
+		return nil, fmt.Errorf("flagd provider: %w", err)
+	}
+	if err := openfeature.SetProviderAndWait(provider); err != nil {
+		// フラグ基盤に繋がらなくても起動は続ける。評価は宣言した既定値へ倒れる
+		slog.Warn("フラグ基盤に接続できないので既定値で動く", "host", cfg.FlagdHost, "port", cfg.FlagdPort, "err", err)
+	}
 	return &Deps{
 		Authenticator: authn,
 		Assurance:     simpleassurance.New(),
+		Flags:         flags.NewEvaluator("photo", flagSet),
 		Commands: usecase.NewPhotoCommands(
 			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
@@ -130,6 +158,10 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 		deps = &Deps{}
 	}
 	base := httpapi.Options{Service: "photo", Version: Version, Authenticator: deps.Authenticator}
+	if deps.Flags != nil {
+		// 認証の後に置く（ターゲティングキーに Principal を使う）
+		base.Middlewares = append(base.Middlewares, deps.Flags.Middleware())
+	}
 
 	ext := httpapi.New(httpapi.External, base)
 	external.Register(ext, external.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
@@ -191,6 +223,15 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return cause
+}
+
+func envIntOr(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func envOr(key, def string) string {
