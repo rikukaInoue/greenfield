@@ -227,6 +227,10 @@
       "ListPhotosOutputBody": {
         "additionalProperties": false,
         "properties": {
+          "can_create": {
+            "description": "主体が今この一覧へ写真を投稿できるか。投稿の一時停止中などは false",
+            "type": "boolean"
+          },
           "photos": {
             "description": "写真の一覧",
             "items": {
@@ -239,7 +243,8 @@
           }
         },
         "required": [
-          "photos"
+          "photos",
+          "can_create"
         ],
         "type": "object"
       },

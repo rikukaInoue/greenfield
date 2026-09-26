@@ -48,3 +48,29 @@ func TestCreateHonorsKillSwitch(t *testing.T) {
 		}
 	})
 }
+
+func TestCanCreateMatchesCreate(t *testing.T) {
+	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, &stubRepo{}, &stubImages{}, nil, &stubRelations{}, nil)
+	principal := authz.Principal{Subject: "alice", Kind: authz.PrincipalUser}
+
+	cases := []struct {
+		name string
+		ctx  context.Context
+		want bool
+	}{
+		{"フラグ OFF", flags.WithValues(authz.WithPrincipal(context.Background(), principal), map[string]bool{usecase.FlagDisableUploads: false}), true},
+		{"フラグ ON", flags.WithValues(authz.WithPrincipal(context.Background(), principal), map[string]bool{usecase.FlagDisableUploads: true}), false},
+		{"主体なし", context.Background(), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cmds.CanCreate(tc.ctx); got != tc.want {
+				t.Fatalf("CanCreate = %v, want %v", got, tc.want)
+			}
+			_, err := cmds.Create(tc.ctx, usecase.CreatePhotoInput{Caption: "x", ContentType: "image/png"})
+			if (err == nil) != tc.want {
+				t.Fatalf("Create err = %v, CanCreate = %v と食い違う", err, tc.want)
+			}
+		})
+	}
+}

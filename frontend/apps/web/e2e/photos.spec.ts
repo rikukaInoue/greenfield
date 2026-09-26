@@ -58,3 +58,10 @@ test("対応外の画像形式は送信前に弾く", async ({ page }) => {
   await expect(page.getByText("JPEG / PNG / WebP / AVIF のみ投稿できます")).toBeVisible();
   await expect(page).toHaveURL(/\/photos\/new$/);
 });
+
+test("投稿できるときは一覧に投稿ボタンが出る（can_create）", async ({ page }) => {
+  await login(page, uniqueSubject());
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "投稿する" })).toBeVisible();
+  await expect(page.getByText("投稿を一時停止中")).toHaveCount(0);
+});
