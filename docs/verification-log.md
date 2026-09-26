@@ -123,3 +123,59 @@
 
 - [ ] internal-02: 「sqlc生成型はRepository実装の内部に閉じる」の実現手段として `repository/internal/` 配下への生成を推奨（コンパイラで強制できる）
 - [ ] internal-05: sqlc 入力スキーマは scratch database + `mysqldump --no-data` の正規化出力とし、`/*!` 行と `AUTO_INCREMENT=` を除去する旨
+
+---
+
+## 2026-09-26 — ステージ 0.4 API骨格（#31） / チェック #16 前半（#16）
+
+### 作ったもの
+
+- `core/problem`: RFC 9457（`application/problem+json`）に機械可読の `code` を必ず持たせる型。`Install()` で `huma.NewError` を差し替え、**huma が自動生成するエラー（422 の入力検証等）にも code が載る**。汎用コード（`validation_failed` 等）とドメインコード（`photo.not_found` 形式）を使い分ける
+- `core/httpapi`: リスナー（external / admin / internal）ごとの huma API 組み立てを共通化。`OpenAPIPath` / `DocsPath` / `SchemasPath` を空にしてスペック・ドキュメントをアプリから配らない（`api/` の生成物が唯一の契約置き場）。CORS ミドルウェアを入れない（全リスナーで閉）。`/healthz` は echo に直接生やして OpenAPI に載せない
+- `services/photo` の3リスナーに契約を定義（実装は Phase 1 以降、`501 photo.not_implemented`）:
+  - external: `POST /photos`、`POST /photos/{id}:publish`（純粋な状態遷移は `:verb`）、`GET /photos/{id}`、`GET /photos`
+  - admin: `GET /photos`（オペレータ）、`POST /accounts/{subject}:delete`（危険操作。ステップアップ検証用）
+  - internal: `GET /photos/{id}`、`GET /gear-items/{gear_item_id}/photos`（N+1 回避の Batch 取得）
+  - OperationID = usecase 名。external と admin で応答型を別にし、管理APIの形が外部クライアントへ漏れない形にした
+- sqlc をコマンド側（`db/queries/repository` → `repository/internal/sqlcgen`）と読み側（`db/queries/readmodel` → `readmodel/internal/sqlcgen`）に分割。CQS をファイル境界に出す
+- `dev/genapi`: huma の型から `api/<service>/<listener>.openapi.json` を生成（`-check` で一致検証）。サーバ起動と同じ `app.APIs()` を使うため、配線とスペックが乖離しない
+- `dev/scripts/api-breaking.sh`: oasdiff の破壊的変更検出と `info.version` のメジャーを機械的に連動させる
+- `mise run api` / `api:check` / `api:breaking`。`check` に `api:check` を追加。oasdiff 1.32.1 を固定
+
+### 実験: 3ポート独立
+
+| 経路 | 結果 |
+|---|---|
+| `:8080 GET /photos` | 501（登録済み） |
+| `:8080 POST /accounts/x:delete`（admin のパス） | **404** |
+| `:8080 GET /gear-items/1/photos`（internal のパス） | **404** |
+| `:8082 POST /photos`（external のコマンド） | **405** |
+| 全リスナー `/openapi.json` `/docs` | 404（アプリから配らない） |
+| `Origin` を付けた要求 | `access-control-allow-*` ヘッダ 0（CORS 閉） |
+
+エラー応答は `Content-Type: application/problem+json` で `{"title","status","detail","code"}`。入力検証エラーも `code: validation_failed` + `errors[].location` が載る。
+
+### 実験: #16 前半（oasdiff とメジャーバージョンの連動）
+
+| 変更 | `mise run api:breaking` |
+|---|---|
+| 変更なし | 破壊的変更なし（exit 0） |
+| フィールド追加（非破壊） | 破壊的変更なし（exit 0） |
+| 応答フィールド削除 × メジャー据え置き | **exit 1**: `response-required-property-removed` + 「メジャーバージョンが未更新（base=1, revision=1）」 |
+| 同じ削除 + `Version` を 2.0.0 へ | exit 0: 「メジャーバージョンが 1 → 2 に更新済み。/v2 の並行提供を確認すること」 |
+
+期待どおり「メジャー未更新でCI失敗」。`/v2` 並行提供の手順（#16 後半）は 2.2 で完成させる。
+
+### 気づき
+
+1. huma の `DefaultConfig` は `SchemaLinkTransformer` を積み、応答に `$schema` と `Link` ヘッダを付ける。`SchemasPath` を空にすると解決しないURLを広告することになるため `Transformers` / `CreateHooks` も外した。
+2. **bash で日本語の直後に `$var` を置くと、多バイト文字が変数名に取り込まれて `unbound variable` になる**（`$rev_major）` → `rev_major�`）。日本語メッセージ内の変数展開は `${var}` で閉じる。既存スクリプトも同様に修正。
+3. `humaecho.NewV4` が echo v4 用（`New` は v5 用）。v4 を使う。
+4. huma は `Errors: []int{...}` に挙げたステータスだけをスペックへ載せる。実際に返しうるコードは明示的に列挙する必要がある。
+5. `api.Huma.OpenAPI().MarshalJSON()` の出力はキー順が不定なため、`json.Unmarshal` → `Encoder(SetIndent)` で正規化してからコミットする（差分レビューのため）。
+
+### 還流
+
+- [ ] api-design §3.1: huma の `SchemaLinkTransformer` を切る（スペックをアプリから配らない構成では `$schema` リンクが解決しない）
+- [ ] api-design §3.2: エラーの `code` を huma の `NewError` 差し替えで「自動生成のエラーにも」載せる実装パターン
+- [ ] api-design §3.4: 破壊的変更 → メジャー更新の連動は、スペックの `info.version` と oasdiff の exit code の組で機械化できる（クライアントのパッケージバージョンを持たない段階でも成立する）

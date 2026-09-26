@@ -18,24 +18,24 @@ status=0
 found_any=0
 for spec in api/*/*.openapi.json; do
   if ! git cat-file -e "$base:$spec" 2>/dev/null; then
-    echo "  $spec: base にスペックがない（新規API）— 検査をスキップ"
+    echo "  ${spec}: base にスペックがない（新規API）— 検査をスキップ"
     continue
   fi
   found_any=1
   out=$(oasdiff breaking "$base:$spec" "$spec" --fail-on ERR --format text --color never 2>&1)
   code=$?
   if [ $code -eq 0 ]; then
-    echo "  $spec: 破壊的変更なし"
+    echo "  ${spec}: 破壊的変更なし"
     continue
   fi
-  echo "  $spec: 破壊的変更を検出"
+  echo "  ${spec}: 破壊的変更を検出"
   echo "$out" | sed 's/^/    /'
   base_major=$(major_ref "$base:$spec")
   rev_major=$(major "$spec")
   if [ -n "$base_major" ] && [ "$rev_major" -gt "$base_major" ]; then
-    echo "    → メジャーバージョンが $base_major → $rev_major に更新済み。/v$rev_major の並行提供を確認すること"
+    echo "    → メジャーバージョンが ${base_major} → ${rev_major} に更新済み。/v${rev_major} の並行提供を確認すること"
   else
-    echo "    → ERROR: メジャーバージョンが未更新（base=$base_major, revision=$rev_major）。" >&2
+    echo "    → ERROR: メジャーバージョンが未更新（base=${base_major}, revision=${rev_major}）。" >&2
     echo "      破壊的変更にはメジャー更新と旧バージョンの並行提供が必要（api-design §3.4）。" >&2
     status=1
   fi
