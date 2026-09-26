@@ -11,6 +11,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"go/format"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -121,13 +122,16 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LO
 		fmt.Sprintf("\t%s \"%s/app\"\n", d.Pkg, d.Module)); err != nil {
 		return err
 	}
-	// 生成モジュールの go.sum を作る（依存は photo と同じ固定版。モジュールキャッシュにあればオフラインで済む）
-	tidy := exec.Command("go", "mod", "tidy")
-	tidy.Dir = filepath.Join(root, "services", name)
-	tidy.Env = append(os.Environ(), "GOWORK=off")
-	tidy.Stderr = os.Stderr
-	if err := tidy.Run(); err != nil {
-		return fmt.Errorf("go mod tidy in services/%s: %w", name, err)
+	// 生成モジュールの go.sum を作り、require を足した dev も整える（依存は photo と同じ固定版。
+	// モジュールキャッシュにあればオフラインで済む）。dev を整えないと GOWORK=off のビルドで落ちる
+	for _, dir := range []string{filepath.Join("services", name), "dev"} {
+		tidy := exec.Command("go", "mod", "tidy")
+		tidy.Dir = filepath.Join(root, dir)
+		tidy.Env = append(os.Environ(), "GOWORK=off")
+		tidy.Stderr = os.Stderr
+		if err := tidy.Run(); err != nil {
+			return fmt.Errorf("go mod tidy in %s: %w", dir, err)
+		}
 	}
 	fmt.Printf("generated services/%s (ports %d/%d/%d) and services/%s-client\n", name, d.Base, d.Internal, d.Admin, name)
 	return nil
@@ -210,5 +214,12 @@ func insertBefore(path, marker, text string) error {
 	if i < 0 {
 		return fmt.Errorf("%s: marker %q not found", path, strings.TrimSpace(marker))
 	}
-	return os.WriteFile(path, []byte(s[:i]+text+s[i:]), 0o644)
+	out := []byte(s[:i] + text + s[i:])
+	if strings.HasSuffix(path, ".go") {
+		// 差し込むだけでは import の並びや位置揃えが崩れ、生成直後の CI（fmt）で落ちる
+		if out, err = format.Source(out); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return os.WriteFile(path, out, 0o644)
 }

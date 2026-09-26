@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	gear "github.com/rikukaInoue/greenfield/services/gear/app"
 	photo "github.com/rikukaInoue/greenfield/services/photo/app"
 	// scaffold:imports
 )
@@ -19,6 +20,11 @@ var services = []service{
 		cfg := photo.ConfigFromEnv()
 		cfg.ExternalAddr, cfg.InternalAddr, cfg.AdminAddr = addrs(8080)
 		return photo.Run(ctx, cfg)
+	}},
+	{Name: "gear", Base: 8090, run: func(ctx context.Context) error {
+		cfg := gear.ConfigFromEnv()
+		cfg.ExternalAddr, cfg.InternalAddr, cfg.AdminAddr = addrs(8090)
+		return gear.Run(ctx, cfg)
 	}},
 	// scaffold:services
 }
