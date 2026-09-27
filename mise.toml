@@ -16,9 +16,9 @@ COMPOSE_FILE = "deploy/compose/compose.yaml"
 # （ワークスペースモードでは use 内の全モジュールが require なしで import できてしまうため）。
 
 [tasks.modules]
-description = "go.work に登録されたモジュール一覧"
+description = "go.work に登録されたモジュール一覧。MODULES（空白区切り）で絞れる"
 hide = true
-run = "awk '/^\\t\\.\\//{print $1}' go.work"
+run = "dev/scripts/modules.sh"
 
 [tasks."build:ws"]
 description = "ワークスペースモードで全モジュールをビルド（日常用）"
@@ -51,9 +51,9 @@ depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:
 # --- sqlc とスキーマ整合 ---
 
 [tasks.services]
-description = "services/ 配下のサービスモジュール一覧（*-client を除く）"
+description = "services/ 配下のサービスモジュール一覧（*-client を除く）。MODULES で絞れる"
 hide = true
-run = "awk '/^\\t\\.\\/services\\/[a-z0-9]+$/{print substr($1,3)}' go.work"
+run = "dev/scripts/modules.sh --services"
 
 [tasks.sqlc]
 description = "各サービスで sqlc generate（生成型は repository/internal/sqlcgen）。クエリのないサービスは明示して飛ばす"
@@ -98,7 +98,7 @@ run = 'for s in $(mise run services); do echo "== $s"; (cd $s && GOWORK=off gola
 
 [tasks."lint:queries"]
 description = "クエリが自ドメインのテーブルだけを参照しているか検証（許可リスト = db/schema.sql）"
-run = "go run ./dev/querylint $(mise run services)"
+run = 's=$(mise run services); if [ -z "$s" ]; then echo "対象サービスなし（lint:queries 対象外）"; else go run ./dev/querylint $s; fi'
 
 # --- ローカルインフラ（docker compose） ---
 

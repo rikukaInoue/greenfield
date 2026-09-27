@@ -14,10 +14,114 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # compose ではなく services: のコンテナを使う。schema-dump.sh はホストの
+  # mysql / mysqldump で接続する（MYSQL_CONTAINER が空のとき）
+  MYSQL_CONTAINER: ""
+  # flagd は立てない。services: では command を渡せず定義を配れないため、
+  # 立てても何も検査しない飾りになる（監査 B-2）。
+  # 評価はプロセス内で行うので、定義ファイルを直接読めば経路はそのまま通る。
+  FLAGS_SOURCE: file
+  FLAGS_FILE: deploy/compose/flagd/flags.json
+
 jobs:
+  # 変更ファイルと go.mod の replace から、検査すべきモジュールを求める（docs/adr/0015）。
+  # main への push は全部を検査する。
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.affected.outputs.go }}
+      frontend: ${{ steps.affected.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          install_args: go
+          cache: true
+
+      - name: 対象を判定する
+        id: affected
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            go run ./dev/affected -base "origin/$BASE_REF" -github-output "$GITHUB_OUTPUT"
+          else
+            go run ./dev/affected -all -github-output "$GITHUB_OUTPUT"
+          fi
+
   # モジュール境界の検証はワークスペースを切ったビルドでしか効かない（docs/adr/0006）。
-  # Phase 2.1 でここを paths-filter によるモジュール単位のジョブへ分割する。
-  check:
+  go:
+    name: go (${{ matrix.module }})
+    needs: changes
+    if: needs.changes.outputs.go != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.changes.outputs.go) }}
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # mise のタスク（check / migrate / schema:check 等）をこのモジュールに絞る
+      MODULES: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/prepare
+
+      - name: マイグレーションを適用する
+        # expand → contract の順。contract を流さないと sqlc の入力と実行時のスキーマが食い違う（監査 A-2）。
+        # サービス以外のモジュールでは対象が無く何もしない
+        run: mise run --quiet migrate
+
+      - name: db/schema.sql がマイグレーションと一致するか
+        run: mise run --quiet schema:check
+
+      - name: 実行時の DB が db/schema.sql と一致するか
+        # schema:check は使い捨てDBとの比較なので、実行時の乖離はこちらでしか検出できない
+        run: mise run --quiet schema:check-live
+
+      - name: fmt / build / vet / test / lint / 生成物の一致
+        run: mise run --quiet check
+
+  api-breaking:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.go != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # base と比較するため履歴が要る
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: 破壊的なAPI変更がないか
+        env:
+          API_BASE_REF: origin/${{ github.base_ref }}
+        run: mise run --quiet api:breaking
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -39,38 +143,10 @@ jobs:
           RUSTFS_CONSOLE_ENABLE: "false"
         ports:
           - 9000:9000
-
-    env:
-      # compose ではなく services: のコンテナを使う。schema-dump.sh はホストの
-      # mysql / mysqldump で接続する（MYSQL_CONTAINER が空のとき）
-      MYSQL_CONTAINER: ""
-      # flagd は立てない。services: では command を渡せず定義を配れないため、
-      # 立てても何も検査しない飾りになる（監査 B-2）。
-      # 評価はプロセス内で行うので、定義ファイルを直接読めば経路はそのまま通る。
-      FLAGS_SOURCE: file
-      FLAGS_FILE: deploy/compose/flagd/flags.json
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          # api:breaking が base と比較するため履歴が要る
-          fetch-depth: 0
 
-      - uses: jdx/mise-action@v2
-        with:
-          install: true
-          cache: true
-
-      - name: mysql クライアントを用意する
-        run: mysql --version || sudo apt-get install -y --no-install-recommends mysql-client
-
-      - name: database と GRANT を用意する
-        # compose の init スクリプトと同じものを流す。
-        # docker-entrypoint-initdb.d は services: では使えないため明示的に適用する。
-        run: |
-          for f in deploy/compose/mysql/init/*.sql; do
-            mysql -h 127.0.0.1 -uroot -proot < "$f"
-          done
+      - uses: ./.github/actions/prepare
 
       - name: RustFS の起動を待つ
         run: |
@@ -85,26 +161,9 @@ jobs:
         run: mise run --quiet s3:up
 
       - name: マイグレーションを適用する
-        # expand → contract の順。contract を流さないと sqlc の入力と実行時のスキーマが食い違う（監査 A-2）
         run: mise run --quiet migrate
 
-      - name: db/schema.sql がマイグレーションと一致するか
-        run: mise run --quiet schema:check
-
-      - name: 実行時の DB が db/schema.sql と一致するか
-        # schema:check は使い捨てDBとの比較なので、実行時の乖離はこちらでしか検出できない
-        run: mise run --quiet schema:check-live
-
-      - name: fmt / build / vet / test / lint / 生成物の一致
-        run: mise run --quiet check
-
-      - name: 破壊的なAPI変更がないか
-        if: github.event_name == 'pull_request'
-        env:
-          API_BASE_REF: origin/${{ github.base_ref }}
-        run: mise run --quiet api:breaking
-
-      - name: フロントエンド（生成型の一致 / typecheck / build）
+      - name: 生成型の一致 / typecheck / build
         run: mise run --quiet web:check
 
       - name: Playwright のブラウザを用意する
@@ -136,3 +195,20 @@ jobs:
           name: playwright-results
           path: frontend/apps/web/test-results/
           retention-days: 7
+
+  # 結果の集約。スキップは成功として扱い、失敗・中断が1つでもあれば落ちる。
+  # ブランチ保護の必須チェックはこのジョブだけを指定すればよい（対象外のジョブがスキップでも通る）。
+  check:
+    if: always()
+    needs: [changes, go, api-breaking, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 結果をまとめる
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' > /dev/null; then
+            echo "失敗したジョブがある" >&2
+            exit 1
+          fi

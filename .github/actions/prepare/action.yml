@@ -1,0 +1,22 @@
+name: prepare
+description: mise のツールを入れ、services の MySQL に database と GRANT を用意する
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@v2
+      with:
+        install: true
+        cache: true
+
+    - name: mysql クライアントを用意する
+      shell: bash
+      run: mysql --version || sudo apt-get install -y --no-install-recommends mysql-client
+
+    - name: database と GRANT を用意する
+      # compose の init スクリプトと同じものを流す。
+      # docker-entrypoint-initdb.d は services: では使えないため明示的に適用する。
+      shell: bash
+      run: |
+        for f in deploy/compose/mysql/init/*.sql; do
+          mysql -h 127.0.0.1 -uroot -proot < "$f"
+        done
