@@ -1,4 +1,5 @@
-// Package external は external リスナー（一般ユーザー）のハンドラ。
+// Package external は external リスナー（一般ユーザー）のメジャー1のアダプタ。
+// 全操作を deprecated にした。後継は handler/external/v2（/v2）で、次のリリースで削除する（docs/adr/0017）。
 package external
 
 import (
@@ -32,6 +33,7 @@ func Register(api httpapi.API, deps Deps) {
 	h := &handlers{deps: deps}
 
 	huma.Register(api.Huma, huma.Operation{
+		Deprecated:  true,
 		OperationID: "CreatePhoto",
 		Method:      http.MethodPost,
 		Path:        "/photos",
@@ -41,6 +43,7 @@ func Register(api httpapi.API, deps Deps) {
 	}, h.createPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
+		Deprecated:  true,
 		OperationID: "CommitPhoto",
 		Method:      http.MethodPost,
 		Path:        "/photos/{id}:commit",
@@ -51,6 +54,7 @@ func Register(api httpapi.API, deps Deps) {
 	}, h.commitPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
+		Deprecated:  true,
 		OperationID: "PublishPhoto",
 		Method:      http.MethodPost,
 		Path:        "/photos/{id}:publish",
@@ -61,6 +65,7 @@ func Register(api httpapi.API, deps Deps) {
 	}, h.publishPhoto)
 
 	huma.Register(api.Huma, huma.Operation{
+		Deprecated:  true,
 		OperationID: "GetPhotoDetail",
 		Method:      http.MethodGet,
 		Path:        "/photos/{id}",
@@ -70,6 +75,7 @@ func Register(api httpapi.API, deps Deps) {
 	}, h.getPhotoDetail)
 
 	huma.Register(api.Huma, huma.Operation{
+		Deprecated:  true,
 		OperationID: "ListPhotos",
 		Method:      http.MethodGet,
 		Path:        "/photos",

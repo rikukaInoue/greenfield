@@ -41,3 +41,4 @@
 | 2026-09-27 | [ステージ 2.2 photo の v2 を並行提供する（ADR 0017、#45 / #16）](verification-log/2026-09-27-stage-22b.md) |
 | 2026-09-27 | [イベント基盤のローカル実装を測る（#75）](verification-log/2026-09-27-event-backend-probe.md) |
 | 2026-09-27 | [ステージ 2.2 利用側（frontend）を photo v2 へ移す（#45 / #16）](verification-log/2026-09-27-stage-22c.md) |
+| 2026-09-27 | [ステージ 2.2 photo v1 を deprecated にする（廃止予告、#45 / #16）](verification-log/2026-09-27-stage-22d.md) |

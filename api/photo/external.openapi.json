@@ -346,6 +346,7 @@
   "paths": {
     "/photos": {
       "get": {
+        "deprecated": true,
         "description": "ListAccessible で得たIDを WHERE IN で絞るため、他人の写真は不可視。",
         "operationId": "ListPhotos",
         "parameters": [
@@ -426,6 +427,7 @@
         ]
       },
       "post": {
+        "deprecated": true,
         "operationId": "CreatePhoto",
         "requestBody": {
           "content": {
@@ -507,6 +509,7 @@
     },
     "/photos/{id}": {
       "get": {
+        "deprecated": true,
         "operationId": "GetPhotoDetail",
         "parameters": [
           {
@@ -602,6 +605,7 @@
     },
     "/photos/{id}:commit": {
       "post": {
+        "deprecated": true,
         "description": "署名URLへの PUT が終わったら呼ぶ。画像の実体が確認できなければ確定しない。",
         "operationId": "CommitPhoto",
         "parameters": [
@@ -698,6 +702,7 @@
     },
     "/photos/{id}:publish": {
       "post": {
+        "deprecated": true,
         "description": "純粋な状態遷移のため :verb を使う。",
         "operationId": "PublishPhoto",
         "parameters": [
