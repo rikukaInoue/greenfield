@@ -114,6 +114,11 @@ jobs:
         # schema:check は使い捨てDBとの比較なので、実行時の乖離はこちらでしか検出できない
         run: mise run --quiet schema:check-live
 
+      - name: database を跨ぐ外部キーが無いか
+        # 跨ぐと親の DDL が子のメタデータロックを取り、**他サービスのデプロイが 1205 で落ちる**。
+        # 通常の読み書きは通るので日常では気づけない。MySQL は跨ぐ FK を許すので機械で止める(#136)
+        run: mise run --quiet fk:check
+
       - name: fmt / build / vet / test / lint / 生成物の一致
         run: mise run --quiet check
 

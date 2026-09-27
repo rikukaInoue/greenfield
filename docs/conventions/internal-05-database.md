@@ -35,6 +35,8 @@ expandは機能リリースに同梱し、トラフィック切り替え前（�
 
 マイグレーションの所有・適用単位はサービスモジュールとする。`services/<name>/migrations/{expand,contract}/` はモジュール内にあり、`go:embed` でバイナリへ同梱し、サービスバイナリのサブコマンド（`<name> migrate expand | contract | status`）として実行する。CDのデプロイ前ステップが叩くのはexpandサブコマンドであり、contractはキュー消化として明示実行する。マイグレーション履歴と実行手段がモジュールに随伴するため、切り出し（別リポジトリ化）時にリポジトリ外の状態を持たない。
 
+**database を跨ぐ外部キーは張らない（CIで機械的に止める）**。MySQL は `REFERENCES other_db.tbl(id)` をエラーにも警告にもしないが、跨ぐFKが1本あると親テーブルのDDLが子テーブルのメタデータロックを取るため、**他サービスのデプロイが `ERROR 1205 Lock wait timeout exceeded` で落ちる**（実測: MySQL 8.4。親の重いDDL中に子へDDLで1205、子へのINSERTは成功。つまり壊れるのはデプロイだけで日常の読み書きでは気づけない）。これは下段の「モジュール間のマイグレーションは完全に独立並行できる」という主張の前提条件そのものであり、文章だけの禁止では1行で静かに破られるため `mise run fk:check`（`information_schema.key_column_usage`）をCIに置く。同一database内のFKは集約内の不変条件として正当なので止めない。他ドメインの参照は**IDを値として持つ**に留め、存在保証が要るなら `<name>-client` 経由のHTTPかReplicaView、即時の整合が要るなら pending 状態 + 同期コマンド + 冪等キー（internal-03）で解く。
+
 バージョン管理テーブルはモジュール×系統ごとに分離する（サービスdatabase内に `<name>_migrations_expand` / `<name>_migrations_contract`）。共有DB期間に複数モジュールの履歴が衝突しないための必須設定であり、これによりモジュール間のマイグレーションは完全に独立並行できる。順序調整は不要である（サービス間に影響する変更はスキーマではなくAPI契約として現れ、oasdiff + クライアントバージョンの経路で管理される）。
 
 CIの検証（空DB全適用 + mysqldump一致 + 破壊的変更lint + テーブル許可リスト照合）はモジュール単位のジョブとして実行し、差分ビルドと同じ粒度に揃える。
