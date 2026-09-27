@@ -37,3 +37,4 @@
 | [0014](0014-ssr-does-not-evaluate-flags.md) | SSR はフラグを評価せず、判定結果を「できること」として API から受け取る | 要 |
 | [0015](0015-ci-affected-from-module-graph.md) | CI の対象は go.mod の replace から依存グラフを計算して決める | 要 |
 | [0016](0016-development-guard-is-an-allow-list.md) | 開発用の実装は許可リストで守る（未設定は本番とみなす） | 要 |
+| [0017](0017-api-versioning.md) | API のバージョニング（並行提供はアダプタで行い、ファイル名とメジャーを結ぶ） | 要 |

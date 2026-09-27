@@ -37,8 +37,41 @@ var Listeners = []Listener{External, Admin, Internal}
 // API はリスナー1つ分の huma API と HTTP ハンドラ。
 type API struct {
 	Listener Listener
-	Huma     huma.API
-	Handler  http.Handler
+	// Huma はメジャー1の API。パスに接頭辞を付けない。
+	Huma    huma.API
+	Handler http.Handler
+
+	router  chi.Router
+	service string
+	majors  map[int]huma.API
+}
+
+// AddMajor は同じリスナーに、メジャー n（2 以上）の API を並行して作る。
+// 戻り値へ登録したパスは /v<n> 配下に置かれ、スペックは別ファイル（<listener>.v<n>.openapi.json）に出る。
+// version のメジャーは n と一致させる。
+func (a API) AddMajor(n int, version string) huma.API {
+	if n < 2 {
+		panic(fmt.Sprintf("httpapi: メジャー %d は AddMajor で作らない（1 は New が作る）", n))
+	}
+	if !strings.HasPrefix(version, fmt.Sprintf("%d.", n)) {
+		panic(fmt.Sprintf("httpapi: version %s のメジャーが %d と一致しない", version, n))
+	}
+	if _, ok := a.majors[n]; ok {
+		panic(fmt.Sprintf("httpapi: メジャー %d は作成済み", n))
+	}
+	// 設定は作り直す。コピーすると OpenAPI（スキーマの登録先）をメジャー間で共有してしまう
+	api := humachi.New(a.router, newConfig(a.service, a.Listener, version))
+	a.majors[n] = api
+	return huma.NewGroup(api, fmt.Sprintf("/v%d", n))
+}
+
+// Majors はメジャー番号 → API を返す（1 を含む）。スペックの生成に使う。
+func (a API) Majors() map[int]huma.API {
+	out := map[int]huma.API{1: a.Huma}
+	for n, api := range a.majors {
+		out[n] = api
+	}
+	return out
 }
 
 // Options は API の組み立て設定。
@@ -71,15 +104,7 @@ func New(l Listener, o Options) API {
 		r.Use(m)
 	}
 
-	cfg := huma.DefaultConfig(fmt.Sprintf("%s %s API", o.Service, l), o.Version)
-	// スペックとドキュメントはアプリから配らない。api/ の生成物が唯一の契約置き場
-	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
-	// SchemasPath を切ったので $schema / Link ヘッダの変換器も外す（解決しないURLになる）
-	cfg.Transformers = nil
-	cfg.CreateHooks = nil
-	cfg.Info.Description = description(o.Service, l)
-
-	api := humachi.New(r, cfg)
+	api := humachi.New(r, newConfig(o.Service, l, o.Version))
 
 	// ヘルスチェックは契約に載せない
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -87,7 +112,18 @@ func New(l Listener, o Options) API {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 
-	return API{Listener: l, Huma: api, Handler: r}
+	return API{Listener: l, Huma: api, Handler: r, router: r, service: o.Service, majors: map[int]huma.API{}}
+}
+
+func newConfig(service string, l Listener, version string) huma.Config {
+	cfg := huma.DefaultConfig(fmt.Sprintf("%s %s API", service, l), version)
+	// スペックとドキュメントはアプリから配らない。api/ の生成物が唯一の契約置き場
+	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
+	// SchemasPath を切ったので $schema / Link ヘッダの変換器も外す（解決しないURLになる）
+	cfg.Transformers = nil
+	cfg.CreateHooks = nil
+	cfg.Info.Description = description(service, l)
+	return cfg
 }
 
 func description(service string, l Listener) string {

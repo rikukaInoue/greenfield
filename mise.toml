@@ -49,7 +49,7 @@ run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exi
 
 [tasks.check]
 description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:check", "api:check"]
+depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:check", "api:check", "api:breaking:test"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -90,6 +90,10 @@ run = "go run ./dev/genapi"
 [tasks."api:check"]
 description = "api/ の生成物がコードと一致しているか検証（CI）"
 run = "go run ./dev/genapi -check"
+
+[tasks."api:breaking:test"]
+description = "API のバージョニング規則（api:breaking）が違反を正しく落とすか検査する"
+run = "dev/scripts/api-breaking.test.sh"
 
 [tasks."api:breaking"]
 description = "base（既定 origin/main）に対する破壊的変更を検出し、メジャー未更新なら失敗（CI）"
