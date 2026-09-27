@@ -1075,3 +1075,19 @@ client 再生成の波及（gear が photo-client を使う構成）は、まだ
    core を変えても core しか検査しない。テストで気づいた（実物の構成で試すまで分からない種類の誤り）
 2. 対象を絞れるようにすると「絞った結果0件」が正当な場合と、打ち間違いで0件になる場合が混ざる。
    `MODULES` は go.work に無いものを指定したら失敗させ、対象サービスが無い検査は「対象外」と出力して飛ばす
+
+### 実験: 実際の PR で CI がどう動くか（#22 / #23）
+
+マージしない下書き PR を3本立て、GitHub Actions 上で走ったジョブを確認した（検証後に閉じた）。
+
+| PR | 変更 | 走ったジョブ | 所要 |
+|---|---|---|---|
+| #106 | `services/photo/usecase/query.go` | changes, go(photo), go(dev), api-breaking, frontend, check | 321s |
+| #107 | `core/flags/flags.go` | changes, go(core), go(photo), go(gear), go(dev), api-breaking, frontend, check | 311s |
+| #108 | `docs/05-roadmap.md` | changes, check（他はスキップ） | 25s |
+
+- **#22**: photo のみの PR で gear のジョブは作られない（matrix に入らない）
+- **#23**: core の変更は core に依存する photo / gear / dev へ広がる。client は core に依存しないので走らない。
+  client 再生成の波及は、実物に利用関係がまだ無いため `dev/affected` のテストで確認している
+- 比較: main への push（全部）は 282s・9 ジョブ。matrix が並列なので所要時間は大きく変わらず、
+  差が出るのはジョブ数（Actions の消費時間）とドキュメントのみの PR
