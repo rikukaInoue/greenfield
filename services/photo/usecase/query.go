@@ -169,3 +169,5 @@ func (q *PhotoQueries) PublicByGearItem(ctx context.Context, gearItemID int64, l
 	}
 	return q.views(ctx, vs), nil
 }
+
+// 実験用（マージしない）: exp/22-photo-only
