@@ -122,6 +122,36 @@ services:
       retries: 20
       start_period: 5s
 
+  # gear も同じ形で deploy できるようにする(#131)。1 サービスしか deploy できないと
+  # 2.4「別サービスは互いに待たない」(#26)を実測できない。
+  gear:
+    profiles: ["deploy"]
+    build:
+      context: ../..
+      dockerfile: services/gear/Dockerfile
+    image: greenfield/gear:local
+    container_name: greenfield-gear
+    environment:
+      ENV: dev
+      GEAR_EXTERNAL_ADDR: ":8090"
+      GEAR_INTERNAL_ADDR: ":8091"
+      GEAR_ADMIN_ADDR: ":8092"
+      # gear はまだ自 database を使わない(Config に DSN が無い)。持ったら photo と同じ形で足す
+      LOCALAUTHZ_DSN: "localauthz:localauthz@tcp(mysql:3306)/localauthz"
+    ports:
+      - "18090:8090"
+      - "18091:8091"
+      - "18092:8092"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8090/healthz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
 volumes:
   mysql-data:
   rustfs-data:

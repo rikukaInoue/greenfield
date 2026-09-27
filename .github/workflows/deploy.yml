@@ -26,7 +26,7 @@ on:
       service:
         description: デプロイするサービス
         type: choice
-        options: [photo]
+        options: [photo, gear]
         default: photo
 
 # 同一サービスのデプロイは直列（追い越すと古いイメージが後から乗る）。

@@ -20,6 +20,7 @@ dc() { docker compose -f "$compose" "$@"; }
 # 各サービスの external ポート（compose の ports と対。ホスト側は 1xxxx へずらす）
 case "$svc" in
   photo) host_port=18080 ;;
+  gear)  host_port=18090 ;;
   *) echo "deploy.sh: 未知のサービス $svc（compose にデプロイ先を足してからここに追記する）" >&2; exit 2 ;;
 esac
 
@@ -32,8 +33,11 @@ migrate)
   # DDL を与えない（internal-05）。
   echo "== $svc: migrate expand"
   dc build "$svc"
+  # migrate ユーザーの DSN はサービスごと(自 database 内の DDL のみ)。
+  # 環境変数名も <SVC>_MIGRATE_DSN で揃っている
+  up=$(echo "$svc" | tr '"'"'[:lower:]'"'"' '"'"'[:upper:]'"'"')
   dc run --rm --no-deps \
-    -e "PHOTO_MIGRATE_DSN=photo_migrate:photo_migrate@tcp(mysql:3306)/photo" \
+    -e "${up}_MIGRATE_DSN=${svc}_migrate:${svc}_migrate@tcp(mysql:3306)/${svc}" \
     "$svc" migrate expand
   ;;
 release)
