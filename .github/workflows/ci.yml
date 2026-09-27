@@ -67,27 +67,40 @@ jobs:
       fail-fast: false
       matrix:
         module: ${{ fromJSON(needs.changes.outputs.go) }}
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
+    # services: は宣言した時点で全ジョブがコンテナ起動を待つ（実測 27〜35 秒）。
+    # DB を使わないモジュールでは丸ごと無駄なので、必要なジョブだけ docker で立てる。
     env:
       # mise のタスク（check / migrate / schema:check 等）をこのモジュールに絞る
       MODULES: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: MySQL が要るモジュールか判定する
+        id: db
+        run: |
+          m="${{ matrix.module }}"; m="${m#./}"
+          case "$m" in
+            # localauthz のテストは MySQL へ到達できないと t.Skip する。
+            # 外すとテストが黙って飛ぶので core にも要る（監査 B-1 と同じ形を作らない）
+            core) need=true ;;
+            # migrations を持つモジュール = サービス。scaffold で増えても自動で拾う
+            *) if [ -d "$m/migrations" ]; then need=true; else need=false; fi ;;
+          esac
+          echo "needed=$need" >> "$GITHUB_OUTPUT"
+          echo "$m: mysql=$need"
+
+      # prepare より先に投げておく。起動は mise のインストールと重なるので、
+      # services: のように「何もせず待つ」時間にならない。
+      - name: MySQL を起動する
+        if: steps.db.outputs.needed == 'true'
+        run: |
+          docker run -d --name mysql -p 3306:3306 \
+            -e MYSQL_ROOT_PASSWORD=root mysql:8.4
+
       - uses: ./.github/actions/prepare
         with:
           cache-key: ${{ matrix.module }}
+          mysql: ${{ steps.db.outputs.needed }}
 
       - name: マイグレーションを適用する
         # expand → contract の順。contract を流さないと sqlc の入力と実行時のスキーマが食い違う（監査 A-2）。
