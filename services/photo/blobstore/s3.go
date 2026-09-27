@@ -37,7 +37,17 @@ type S3Store struct {
 }
 
 // NewS3Store は S3Store を返す。
+//
+// AccessKeyID が空なら AWS の既定の認証チェーン（IAM のタスクロール等）を使う。
+// 非空ならスタティック認証に切り替わるので、本番で意図せず固定の資格情報を使わないよう
+// 呼び出し側は既定値を置かないこと。
 func NewS3Store(ctx context.Context, cfg Config) (*S3Store, error) {
+	if cfg.Bucket == "" {
+		return nil, fmt.Errorf("blobstore: バケット名が空（PHOTO_IMAGE_BUCKET を設定する）")
+	}
+	if cfg.AccessKeyID != "" && cfg.SecretAccessKey == "" {
+		return nil, fmt.Errorf("blobstore: AccessKeyID があるのに SecretAccessKey が空")
+	}
 	opts := []func(*config.LoadOptions) error{config.WithRegion(cfg.Region)}
 	if cfg.AccessKeyID != "" {
 		opts = append(opts, config.WithCredentialsProvider(

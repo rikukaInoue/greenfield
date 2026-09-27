@@ -1,25 +1,27 @@
 // Package staticauthn は devtoken を検証する Authenticator を提供する。
 // 署名検証はしないが、トークンがなければ 401 を返す（素通しは作らない）。
+// 開発用の環境でしか組み立てられない（runtimeenv の許可リスト）。
 package staticauthn
 
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/authz/devtoken"
 	"github.com/rikukaInoue/greenfield/core/problem"
+	"github.com/rikukaInoue/greenfield/core/runtimeenv"
 )
 
 // Authenticator は devtoken を検証する。
 type Authenticator struct{}
 
-// New は Authenticator を返す。ENV=production では誤配線として起動を止める。
+// New は Authenticator を返す。開発用の環境でなければ誤配線として起動を止める。
+// 判定は許可リスト（runtimeenv）で行う。拒否リストでは ENV の未設定や綴り違いが通り抜ける。
 func New() (*Authenticator, error) {
-	if env := os.Getenv("ENV"); env == "production" || env == "prod" {
-		return nil, fmt.Errorf("staticauthn: ENV=%s では使用できない（本番は oidcauthn を配線する）", env)
+	if err := runtimeenv.RequireDevelopment("staticauthn（署名検証のない擬似トークン）"); err != nil {
+		return nil, fmt.Errorf("staticauthn: %w（本番は oidcauthn を配線する）", err)
 	}
 	return &Authenticator{}, nil
 }

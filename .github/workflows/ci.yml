@@ -15,6 +15,9 @@ permissions:
   contents: read
 
 env:
+  # 開発用の実装を許す環境であることを明示する。未設定は本番として扱われ、
+  # staticauthn などが組み立てられない（docs/adr/0016）
+  ENV: ci
   # compose ではなく services: のコンテナを使う。schema-dump.sh はホストの
   # mysql / mysqldump で接続する（MYSQL_CONTAINER が空のとき）
   MYSQL_CONTAINER: ""

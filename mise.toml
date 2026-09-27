@@ -9,6 +9,9 @@ pnpm = "12.6.0"
 
 [env]
 COMPOSE_FILE = "deploy/compose/compose.yaml"
+# 開発用の実装（署名検証のない擬似トークン、固定の資格情報）は ENV が許可リストに
+# 入っていないと組み立てられない。未設定は本番として扱われる（docs/adr/0016）
+ENV = "dev"
 
 # --- ビルド・検証 ---
 # モジュールは go.work の use から拾う。CI はワークスペースを切って（GOWORK=off）各モジュールを
