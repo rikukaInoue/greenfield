@@ -42,7 +42,23 @@ migrate)
   ;;
 release)
   echo "== $svc: release（イメージを差し替えて起動）"
-  dc --profile deploy up -d --build --wait --wait-timeout 120 "$svc"
+  # --no-deps が要る。**依存(mysql 等)を一緒に reconcile させない**ため。
+  #
+  # 付けないと、compose が depends_on を辿って共有インフラの再作成に手を出し、
+  # 別サービスの deploy と同時に走ったときにコンテナ名を奪い合って落ちる:
+  #
+  #   Container greenfield-gear  Stopped
+  #   Container greenfield-mysql Recreate
+  #   Error response from daemon: Conflict. The container name
+  #   "/d0ed6decaace_greenfield-mysql" is already in use by container ...
+  #
+  # これは check #26 の「別サービスは互いに待たない」を実測して見つけた（#133）。
+  # concurrency group は **スケジューリング**を分けるが、実行が共有物に触れば
+  # ぶつかる。分離はデプロイ側の責務。
+  #
+  # インフラの起動は `mise run db:up` の持ち物。落ちていれば healthcheck が
+  # 失敗して deploy も失敗する（黙って起動しないほうが、何が前提かが見える）。
+  dc --profile deploy up -d --no-deps --build --wait --wait-timeout 120 "$svc"
   ;;
 healthcheck)
   echo "== $svc: healthcheck"

@@ -46,3 +46,4 @@
 | 2026-09-27 | [ステージ 2.2 Go の生成クライアント（#45）](verification-log/2026-09-27-stage-22f.md) |
 | 2026-09-27 | [status の既定を fail-closed に（監査 D-4 / #122）](verification-log/2026-09-27-status-fail-closed.md) |
 | 2026-09-27 | [ステージ 2.3 デプロイ順序（#46 / check #24）](verification-log/2026-09-27-stage-23.md) |
+| 2026-09-27 | [ステージ 2.4 並列と直列（#47 / check #26）](verification-log/2026-09-27-stage-24.md) |
