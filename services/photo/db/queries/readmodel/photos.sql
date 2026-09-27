@@ -11,8 +11,15 @@
 SELECT * FROM photos WHERE id = ? AND status = 'ready';
 
 -- name: ListPhotosByIDs :many
--- 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る
-SELECT * FROM photos WHERE id IN (sqlc.slice('ids')) AND status = 'ready' ORDER BY created_at DESC;
+-- 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る。
+-- visibility の絞り込みと LIMIT は **SQL でやる**。以前はハンドラが Go 側で
+-- 絞っていたが、件数を切った後に絞るので公開写真が取りこぼされていた（#91 E）。
+SELECT * FROM photos
+WHERE id IN (sqlc.slice('ids'))
+  AND status = 'ready'
+  AND (sqlc.arg('visibility') = '' OR visibility = sqlc.arg('visibility'))
+ORDER BY created_at DESC
+LIMIT ?;
 
 -- name: ListPhotosByOwner :many
 SELECT * FROM photos WHERE owner_subject = ? AND status = 'ready' ORDER BY created_at DESC LIMIT ?;

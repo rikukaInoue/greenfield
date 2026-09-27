@@ -17,7 +17,6 @@ const (
 	ActionView    = "photo.view"
 	ActionEdit    = "photo.edit"
 	ActionPublish = "photo.publish"
-	ActionDelete  = "photo.delete"
 	ActionOperate = "platform.operate"
 )
 
@@ -262,9 +261,9 @@ func (c *PhotoCommands) Publish(ctx context.Context, id domain.PhotoID) (*domain
 // owner タプルをリソースの存在証明として使う(ListAccessible)。
 //
 // 認可は **operator 権限**で見る。アカウント削除はオペレータの操作であって
-// 写真ごとの owner 権限ではない。ActionDelete(= owner relation)で判定すると、
-// operator が継承するのは viewer / editor だけなので、この経路は必ず拒否される
-// (core/authz/localauthz の fromParent)。
+// 写真ごとの owner 権限ではない。owner relation にマップされる action
+// (photo.edit 等)で判定すると、operator が継承するのは viewer / editor だけ
+// なので、この経路は必ず拒否される(core/authz/localauthz の fromParent)。
 //
 // 順序は Reclaim と同じ「無害な側から」: オブジェクト → 行 → タプル。
 // 途中で落ちたときに残るのは「行はあるが画像がない」(表示経路には status で

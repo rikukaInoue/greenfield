@@ -174,15 +174,3 @@ func (p *Photo) Publish() error {
 	p.visibility = Public
 	return nil
 }
-
-// Unpublish は非公開へ戻す。
-func (p *Photo) Unpublish() { p.visibility = Private }
-
-// Edit はキャプションと使用機材を差し替える。
-func (p *Photo) Edit(caption Caption, gearItemID *int64) error {
-	if gearItemID != nil && *gearItemID <= 0 {
-		return fmt.Errorf("%w: gear_item_id が不正", ErrInvalid)
-	}
-	p.caption, p.gearItemID = caption, gearItemID
-	return nil
-}

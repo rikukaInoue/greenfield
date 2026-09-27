@@ -17,10 +17,14 @@ import (
 )
 
 // Deps はハンドラが使う依存。実装は app/ が注入する。
+// AAL の要求は external には無い。**決めた結果として無い**: 自分の写真の操作は
+// AAL1（通常ログイン）で足り、ステップアップが要るのは不可逆な操作（アカウント
+// 削除）で、それは admin 側にある。internal-04 の「どのハンドラが RequireAAL を
+// 持つかを今決める」に対する答えをここに残す。要求が生まれたら
+// AssuranceChecker を戻して、そのハンドラで呼ぶ。
 type Deps struct {
-	Commands  *usecase.PhotoCommands
-	Queries   *usecase.PhotoQueries
-	Assurance authz.AssuranceChecker
+	Commands *usecase.PhotoCommands
+	Queries  *usecase.PhotoQueries
 }
 
 type handlers struct {
@@ -197,17 +201,16 @@ func (h *handlers) getPhotoDetail(ctx context.Context, in *GetPhotoDetailInput) 
 }
 
 func (h *handlers) listPhotos(ctx context.Context, in *ListPhotosInput) (*ListPhotosOutput, error) {
-	views, err := h.deps.Queries.List(ctx, in.Limit)
+	views, err := h.deps.Queries.List(ctx, in.Visibility, in.Limit)
 	if err != nil {
 		return nil, toHTTP(err)
 	}
 	out := &ListPhotosOutput{}
 	out.Body.CanCreate = h.deps.Commands.CanCreate(ctx)
 	out.Body.Photos = make([]Photo, 0, len(views))
+	// visibility の絞り込みは usecase / SQL 側。ここで絞ると、件数を切った後に
+	// 落とすことになって取りこぼす（#91 E）
 	for _, v := range views {
-		if in.Visibility != "" && v.Visibility != in.Visibility {
-			continue
-		}
 		out.Body.Photos = append(out.Body.Photos, fromView(v))
 	}
 	return out, nil

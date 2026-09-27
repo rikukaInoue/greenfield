@@ -168,7 +168,7 @@ func TestDeleteByOwnerRequiresOperator(t *testing.T) {
 	images := &stubImages{}
 	relations := &stubRelations{}
 	// owner 相当の権限だけある主体(operator ではない)
-	authorizer := &stubAuthorizer{allow: map[string]bool{usecase.ActionDelete: true}}
+	authorizer := &stubAuthorizer{allow: map[string]bool{usecase.ActionEdit: true}}
 	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, repo, images, authorizer, relations, nil)
 
 	newOwnedPhoto(t, repo, "alice")
@@ -180,7 +180,7 @@ func TestDeleteByOwnerRequiresOperator(t *testing.T) {
 	if len(images.deleted) != 0 || len(relations.deletedTuples) != 0 {
 		t.Errorf("拒否したのに消している: images=%v tuples=%v", images.deleted, relations.deletedTuples)
 	}
-	// 判定は operator で聞く。ActionDelete(= owner relation)で聞くと、
+	// 判定は operator で聞く。owner relation にマップされる action で聞くと、
 	// operator は viewer/editor しか継承しないのでこの経路は必ず拒否される
 	if len(authorizer.asked) != 1 || authorizer.asked[0].Action != usecase.ActionOperate {
 		t.Errorf("聞いた相手が違う: %+v", authorizer.asked)
