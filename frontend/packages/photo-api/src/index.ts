@@ -1,5 +1,5 @@
-// Package @greenfield/photo-api は photo external API の型定義。external.gen.ts は `pnpm gen` で生成する。
-import type { components, paths } from "./external.gen.ts";
+// Package @greenfield/photo-api は photo external API（メジャー2、/v2）の型定義。external.v2.gen.ts は `pnpm gen` で生成する。
+import type { components, paths } from "./external.v2.gen.ts";
 
 export type { components, paths };
 

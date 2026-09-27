@@ -14,7 +14,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const api = context.get(photoClientContext);
   try {
     const created = await unwrap(
-      api.POST("/photos", {
+      api.POST("/v2/photos", {
         body: {
           caption: String(form.get("caption") ?? ""),
           content_type: contentType as ImageContentType,

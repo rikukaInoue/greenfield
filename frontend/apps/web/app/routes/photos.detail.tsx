@@ -17,7 +17,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
   const fresh = new URL(request.url).searchParams.get("fresh") === "1";
   const api = context.get(photoClientContext);
   try {
-    const photo = await unwrap(api.GET("/photos/{id}", { params: { path: { id }, query: { fresh } } }));
+    const photo = await unwrap(api.GET("/v2/photos/{id}", { params: { path: { id }, query: { fresh } } }));
     return { photo };
   } catch (err) {
     toRouteError(err, request);
@@ -30,7 +30,7 @@ export async function action({ request, params, context }: Route.ActionArgs) {
   const api = context.get(photoClientContext);
   if (form.get("intent") !== "publish") throw data("Bad Request", { status: 400 });
   try {
-    await unwrap(api.POST("/photos/{id}:publish", { params: { path: { id } } }));
+    await unwrap(api.POST("/v2/photos/{id}:publish", { params: { path: { id } } }));
   } catch (err) {
     if (err instanceof ApiError && err.status === 409) {
       return data({ error: err.problem.detail ?? "公開できない状態です" }, { status: 409 });
