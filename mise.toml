@@ -48,8 +48,8 @@ description = "各モジュールを GOWORK=off で go mod tidy"
 run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exit 1; done'
 
 [tasks.check]
-description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:check", "api:check", "api:breaking:test"]
+description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check + client:check（CI 相当。schema:check は DB が要るので別）"
+depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:check", "api:check", "client:check", "api:breaking:test"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -90,6 +90,14 @@ run = "go run ./dev/genapi"
 [tasks."api:check"]
 description = "api/ の生成物がコードと一致しているか検証（CI）"
 run = "go run ./dev/genapi -check"
+
+[tasks.client]
+description = "api/<service>/internal.openapi.json から services/<service>-client を oapi-codegen で生成（手書きしない）"
+run = "dev/scripts/client-gen.sh"
+
+[tasks."client:check"]
+description = "生成クライアントがスペックと一致しているか検証（CI）。MODULES で絞れる"
+run = "dev/scripts/client-gen.sh --check"
 
 [tasks."api:breaking:test"]
 description = "API のバージョニング規則（api:breaking）が違反を正しく落とすか検査する"

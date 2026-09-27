@@ -43,3 +43,4 @@
 | 2026-09-27 | [ステージ 2.2 利用側（frontend）を photo v2 へ移す（#45 / #16）](verification-log/2026-09-27-stage-22c.md) |
 | 2026-09-27 | [ステージ 2.2 photo v1 を deprecated にする（廃止予告、#45 / #16）](verification-log/2026-09-27-stage-22d.md) |
 | 2026-09-27 | [ステージ 2.2 photo v1 を削除する（並行提供の手順の完了、#16 / #45）](verification-log/2026-09-27-stage-22e.md) |
+| 2026-09-27 | [ステージ 2.2 Go の生成クライアント（#45）](verification-log/2026-09-27-stage-22f.md) |
