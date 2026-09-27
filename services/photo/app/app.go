@@ -21,6 +21,7 @@ import (
 	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/flags"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	"github.com/rikukaInoue/greenfield/core/runtimeenv"
 	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/flagsource"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
@@ -76,13 +77,7 @@ func ConfigFromEnv() Config {
 		DSN:           envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo?parseTime=true"),
 		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
 		Flags:         flagsource.ConfigFromEnv(),
-		Images: blobstore.Config{
-			Bucket:          envOr("PHOTO_IMAGE_BUCKET", "photo-images"),
-			Region:          envOr("AWS_REGION", "us-east-1"),
-			Endpoint:        envOr("AWS_ENDPOINT_URL", "http://localhost:9000"),
-			AccessKeyID:     envOr("AWS_ACCESS_KEY_ID", "test"),
-			SecretAccessKey: envOr("AWS_SECRET_ACCESS_KEY", "testtest"),
-		},
+		Images:        imageConfigFromEnv(),
 	}
 }
 
@@ -213,6 +208,38 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return cause
+}
+
+// imageConfigFromEnv はオブジェクトストレージの設定を読む。
+//
+// 資格情報とエンドポイントに既定値を置かない。非空の AccessKeyID はスタティック認証を意味するため、
+// 既定値を残すと IAM のタスクロール運用（環境変数を設定しない）で既定の認証チェーンが使われなくなる。
+// ローカル用の値は開発環境でだけ補う。
+func imageConfigFromEnv() blobstore.Config {
+	cfg := blobstore.Config{
+		Bucket:          os.Getenv("PHOTO_IMAGE_BUCKET"),
+		Region:          os.Getenv("AWS_REGION"),
+		Endpoint:        os.Getenv("AWS_ENDPOINT_URL"),
+		AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+	}
+	if runtimeenv.RequireDevelopment("ローカルのオブジェクトストレージ設定") != nil {
+		return cfg
+	}
+	// 開発環境のみ: compose の RustFS を既定にする
+	if cfg.Bucket == "" {
+		cfg.Bucket = "photo-images"
+	}
+	if cfg.Region == "" {
+		cfg.Region = "us-east-1"
+	}
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = "http://localhost:9000"
+	}
+	if cfg.AccessKeyID == "" {
+		cfg.AccessKeyID, cfg.SecretAccessKey = "test", "testtest"
+	}
+	return cfg
 }
 
 func envOr(key, def string) string {
