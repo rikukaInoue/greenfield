@@ -59,12 +59,11 @@ export default function PhotoDetail({ loaderData, actionData }: Route.ComponentP
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           <dt className="text-stone-500">投稿者</dt>
           <dd>{photo.owner_id}</dd>
-          {photo.gear_name && (
-            <>
-              <dt className="text-stone-500">機材</dt>
-              <dd>{photo.gear_name}</dd>
-            </>
-          )}
+          {/*
+            機材名（gear_name）の表示はここにあったが、API が値を返したことは
+            一度も無く、条件が真になる経路が存在しなかった。ReplicaView の実装が
+            できたら契約と一緒に戻す（監査 E / #91）。
+          */}
           {photo.size_bytes != null && (
             <>
               <dt className="text-stone-500">サイズ</dt>

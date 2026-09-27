@@ -23,7 +23,7 @@
             "type": "string"
           },
           "gear_item_id": {
-            "description": "使用機材（gear の item ID）。指定すると gear への紐付けが pending で始まる",
+            "description": "使用機材（gear の item ID）。値を保存するだけで、gear 側への問い合わせや紐付けは行わない",
             "format": "int64",
             "minimum": 1,
             "type": "integer"
@@ -66,13 +66,6 @@
             ],
             "format": "int64",
             "type": "integer"
-          },
-          "gear_name": {
-            "description": "使用機材の表示名（ReplicaView 由来。業務判断に使わない）",
-            "examples": [
-              "X-T5"
-            ],
-            "type": "string"
           },
           "id": {
             "description": "写真ID",
@@ -270,13 +263,6 @@
             ],
             "format": "int64",
             "type": "integer"
-          },
-          "gear_name": {
-            "description": "使用機材の表示名（ReplicaView 由来。業務判断に使わない）",
-            "examples": [
-              "X-T5"
-            ],
-            "type": "string"
           },
           "id": {
             "description": "写真ID",
@@ -553,16 +539,6 @@
             },
             "description": "Unauthorized"
           },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -638,16 +614,6 @@
               }
             },
             "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Forbidden"
           },
           "404": {
             "content": {
@@ -734,16 +700,6 @@
               }
             },
             "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Forbidden"
           },
           "404": {
             "content": {

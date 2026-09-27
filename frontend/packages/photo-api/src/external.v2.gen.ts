@@ -97,7 +97,7 @@ export interface components {
             content_type: "image/jpeg" | "image/png" | "image/webp" | "image/avif";
             /**
              * Format: int64
-             * @description 使用機材（gear の item ID）。指定すると gear への紐付けが pending で始まる
+             * @description 使用機材（gear の item ID）。値を保存するだけで、gear 側への問い合わせや紐付けは行わない
              */
             gear_item_id?: number;
             /**
@@ -124,11 +124,6 @@ export interface components {
              * @example 42
              */
             gear_item_id?: number;
-            /**
-             * @description 使用機材の表示名（ReplicaView 由来。業務判断に使わない）
-             * @example X-T5
-             */
-            gear_name?: string;
             /**
              * Format: int64
              * @description 写真ID
@@ -236,11 +231,6 @@ export interface components {
              * @example 42
              */
             gear_item_id?: number;
-            /**
-             * @description 使用機材の表示名（ReplicaView 由来。業務判断に使わない）
-             * @example X-T5
-             */
-            gear_name?: string;
             /**
              * Format: int64
              * @description 写真ID
@@ -435,15 +425,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -496,15 +477,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -573,15 +545,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
