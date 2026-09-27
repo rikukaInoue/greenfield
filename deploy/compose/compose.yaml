@@ -76,6 +76,52 @@ services:
     # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。
     # 到達性は依存する側（アプリ）が既定値へ倒れる形で吸収する。
 
+  # --- デプロイ先（ステージ 2.3 / #46）------------------------------------
+  # 手元マシンの compose がデプロイ先。ECS は Phase 7 で、そのときは
+  # このサービス定義がタスク定義に置き換わる（デプロイ順序の形は変えない）。
+  #
+  # 既定では起動しない（profiles）。開発の日常は `mise run run`（allinone）で、
+  # ここはデプロイ順序の検証と「動いているものを差し替える」実演に使う。
+  #   docker compose --profile deploy up -d --build photo
+  photo:
+    profiles: ["deploy"]
+    build:
+      # モジュール境界を跨がないよう、ビルドは GOWORK=off でこのモジュールだけを閉じる
+      context: ../..
+      dockerfile: services/photo/Dockerfile
+    image: greenfield/photo:local
+    container_name: greenfield-photo
+    environment:
+      ENV: dev
+      PHOTO_EXTERNAL_ADDR: ":8080"
+      PHOTO_INTERNAL_ADDR: ":8081"
+      PHOTO_ADMIN_ADDR: ":8082"
+      PHOTO_DSN: "photo_app:photo_app@tcp(mysql:3306)/photo?parseTime=true"
+      LOCALAUTHZ_DSN: "localauthz:localauthz@tcp(mysql:3306)/localauthz"
+      FLAGD_HOST: flagd
+      FLAGD_PORT: "8015"
+      PHOTO_IMAGE_BUCKET: photo-images
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: "http://rustfs:9000"
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: testtest
+    ports:
+      - "18080:8080"
+      - "18081:8081"
+      - "18082:8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    healthcheck:
+      # デプロイの成否をこの healthcheck で判定する（workflow の healthcheck ジョブも同じ口を叩く）
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
 volumes:
   mysql-data:
   rustfs-data:

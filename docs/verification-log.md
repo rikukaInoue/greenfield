@@ -45,3 +45,4 @@
 | 2026-09-27 | [ステージ 2.2 photo v1 を削除する（並行提供の手順の完了、#16 / #45）](verification-log/2026-09-27-stage-22e.md) |
 | 2026-09-27 | [ステージ 2.2 Go の生成クライアント（#45）](verification-log/2026-09-27-stage-22f.md) |
 | 2026-09-27 | [status の既定を fail-closed に（監査 D-4 / #122）](verification-log/2026-09-27-status-fail-closed.md) |
+| 2026-09-27 | [ステージ 2.3 デプロイ順序（#46 / check #24）](verification-log/2026-09-27-stage-23.md) |
