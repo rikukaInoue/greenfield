@@ -154,10 +154,24 @@ func resetDirty(m *migrate.Migrate, src source.Driver) error {
 		return nil
 	}
 	slog.Warn("直前の失敗で dirty が残っているので戻す", "version", v)
+
+	// 失敗したのが最初のマイグレーションなら、戻し先は「何も適用していない」。
+	// **source の先頭と一致するかで判定する**。Prev のエラーで代用してはいけない:
+	// 失敗したファイルを消す / 番号を変える（= 前方修正の普通の形）と Prev は
+	// 「見つからない」で返り、それを「最初だった」と読むと Force(-1) で
+	// **履歴を全消し**してしまう。次の実行は CREATE TABLE から始めて
+	// "already exists" で失敗し、以後どのデプロイも通らなくなる（check #24 で観測）。
+	if first, ferr := src.First(); ferr == nil && v == first {
+		return m.Force(-1)
+	}
+
 	prev, err := src.Prev(v)
 	if err != nil {
-		// ひとつ前が無い = 失敗したのが最初のマイグレーション
-		return m.Force(-1)
+		// v が source に無い。dirty を残したまま止める —— 推測して履歴を書き換えるより、
+		// 人が「どこまで適用されたか」を見て force するほうが安全。
+		return fmt.Errorf("dirty なバージョン %d が source に無い（失敗したマイグレーションを"+
+			"消した/番号を変えた？）。適用状況を確認して `migrate force <version>` で"+
+			"解消すること。履歴を推測で書き換えない: %w", v, err)
 	}
 	return m.Force(int(prev))
 }

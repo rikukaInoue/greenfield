@@ -1,0 +1,56 @@
+# デプロイ順序（ステージ 2.3 / #46）。
+#
+# `migrate expand → release → healthcheck` を **ジョブグラフで** 強制する。
+# 3段を1つのジョブにまとめない理由は check #24 そのもの: まとめると「migrate が
+# 落ちたら続きを走らせない」保証がスクリプトの制御フローになる。needs に置けば、
+# 保証は実行機構（GitHub Actions）の側になり、スクリプトを読まなくても成り立つ。
+#
+# デプロイ先は手元マシンの compose（費用ゼロ）。ECS は Phase 7 で、そのときは
+# `dev/scripts/deploy.sh` の release の中身がタスク定義の更新に変わるだけで、
+# この並びは変えない（#63 で同じ check を ECS で再演する）。
+#
+# runs-on はラベルを変数で差せるようにしてある。自己ホストランナーを登録したら
+# リポジトリ変数 DEPLOY_RUNNER に指定する（未設定なら self-hosted）。
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: デプロイするサービス
+        type: choice
+        options: [photo]
+        default: photo
+
+# 同一サービスのデプロイは直列（追い越すと古いイメージが後から乗る）。
+# 別サービスは互いに待たない（group にサービス名を入れる）。ステージ 2.4 / #26 の前哨。
+concurrency:
+  group: deploy-${{ inputs.service }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # 1段目: スキーマ（expand のみ。contract はキュー消化として別運用）
+  migrate:
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'self-hosted' }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: dev/scripts/deploy.sh "${{ inputs.service }}" migrate
+
+  # 2段目: アプリの差し替え。**migrate が成功しないと開始しない**
+  release:
+    needs: migrate
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'self-hosted' }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: dev/scripts/deploy.sh "${{ inputs.service }}" release
+
+  # 3段目: 到達確認。ここが落ちたらデプロイは失敗として残る
+  healthcheck:
+    needs: release
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'self-hosted' }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: dev/scripts/deploy.sh "${{ inputs.service }}" healthcheck
