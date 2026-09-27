@@ -80,6 +80,47 @@ func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, erro
 	return i, err
 }
 
+const listPhotosByOwnerForDelete = `-- name: ListPhotosByOwnerForDelete :many
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE owner_subject = ? ORDER BY id
+`
+
+// アカウント削除: 消す前にオブジェクト鍵と ID を集める。status は問わない
+// （pending も実体が残りうる。#85 C-3）
+func (q *Queries) ListPhotosByOwnerForDelete(ctx context.Context, ownerSubject string) ([]Photo, error) {
+	rows, err := q.db.QueryContext(ctx, listPhotosByOwnerForDelete, ownerSubject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Photo{}
+	for rows.Next() {
+		var i Photo
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerSubject,
+			&i.Visibility,
+			&i.GearItemID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ObjectKey,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Status,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStalePendingPhotos = `-- name: ListStalePendingPhotos :many
 SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos
 WHERE status = 'pending_upload' AND created_at < ?

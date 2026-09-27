@@ -5,7 +5,10 @@
 -- 改名は完了済み。表示は title だけを使う。
 
 -- name: GetPhotoDetail :one
-SELECT * FROM photos WHERE id = ?;
+-- 他の表示クエリと同じく pending_upload は返さない。詳細だけ status を見ていなかったため、
+-- 画像を上げていない写真に 200 が返り、**存在しないオブジェクトへ署名付き URL を発行**していた
+-- （ADR 0009 が「有害」と書いた状態そのもの）。オペレータが未完了の行を見るのは一覧（ListPhotos）の役目。
+SELECT * FROM photos WHERE id = ? AND status = 'ready';
 
 -- name: ListPhotosByIDs :many
 -- 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る

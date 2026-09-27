@@ -13,7 +13,7 @@ import (
 
 const getPhotoDetail = `-- name: GetPhotoDetail :one
 
-SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id = ?
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id = ? AND status = 'ready'
 `
 
 // 読み側（Read Model）のクエリ。Entity を経由せず応答の形を直接組み立てる。tx 外で実行する。
@@ -21,6 +21,9 @@ SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, obje
 // アップロード未完了（pending_upload）の行は表示経路に出さない。
 // SELECT * を使うのは全列を表示に使うため。contract で列を落とせば生成コードが変わり、参照側がコンパイルで落ちる。
 // 改名は完了済み。表示は title だけを使う。
+// 他の表示クエリと同じく pending_upload は返さない。詳細だけ status を見ていなかったため、
+// 画像を上げていない写真に 200 が返り、**存在しないオブジェクトへ署名付き URL を発行**していた
+// （ADR 0009 が「有害」と書いた状態そのもの）。オペレータが未完了の行を見るのは一覧（ListPhotos）の役目。
 func (q *Queries) GetPhotoDetail(ctx context.Context, id uint64) (Photo, error) {
 	row := q.db.QueryRowContext(ctx, getPhotoDetail, id)
 	var i Photo

@@ -29,6 +29,15 @@ type Config struct {
 	SecretAccessKey string
 }
 
+// callTimeout は 1 回のストレージ呼び出しの上限。
+//
+// ここに置くのは、呼び出し側が忘れられない場所だから。リクエスト経路には
+// タイムアウトが 1 つも無く、S3 が応答しないとハンドラが無期限に待っていた(#85 C-1)。
+// 短いのは、内部-03 が Atomic の条件に挙げる「短いタイムアウト」と同じ理由で、
+// 待ち続けるより落ちて縮退したほうが被害が小さいため。署名の生成は
+// ネットワークに出ないので対象外。
+const callTimeout = 3 * time.Second
+
 // S3Store は S3 互換ストレージ上の ImageStore。
 type S3Store struct {
 	bucket  string
@@ -115,6 +124,8 @@ func (s *S3Store) PresignGet(ctx context.Context, key string, ttl time.Duration)
 
 // Stat はオブジェクトの情報を返す。
 func (s *S3Store) Stat(ctx context.Context, key string) (usecase.ObjectInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -137,6 +148,8 @@ func (s *S3Store) Stat(ctx context.Context, key string) (usecase.ObjectInfo, err
 
 // Delete はオブジェクトを削除する。
 func (s *S3Store) Delete(ctx context.Context, key string) error {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
 	if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),

@@ -132,6 +132,20 @@ func (r *PhotoRepository) ListStalePending(ctx context.Context, before time.Time
 	return out, nil
 }
 
+// ListByOwner は所有者の写真を status を問わず返す。アカウント削除が、消す前に
+// オブジェクト鍵と ID を集めるために使う(#85 C-3)。
+func (r *PhotoRepository) ListByOwner(ctx context.Context, ownerSubject string) ([]*domain.Photo, error) {
+	rows, err := r.queries(ctx).ListPhotosByOwnerForDelete(ctx, ownerSubject)
+	if err != nil {
+		return nil, fmt.Errorf("repository: list by owner: %w", err)
+	}
+	out := make([]*domain.Photo, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, restore(row))
+	}
+	return out, nil
+}
+
 // DeleteByOwner は所有者の写真を全て削除し、件数を返す。
 func (r *PhotoRepository) DeleteByOwner(ctx context.Context, ownerSubject string) (int, error) {
 	res, err := r.queries(ctx).DeletePhotosByOwner(ctx, ownerSubject)

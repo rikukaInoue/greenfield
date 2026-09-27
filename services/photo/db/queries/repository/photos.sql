@@ -12,6 +12,11 @@ UPDATE photos
 SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
 WHERE id = ?;
 
+-- name: ListPhotosByOwnerForDelete :many
+-- アカウント削除: 消す前にオブジェクト鍵と ID を集める。status は問わない
+-- （pending も実体が残りうる。#85 C-3）
+SELECT * FROM photos WHERE owner_subject = ? ORDER BY id;
+
 -- name: DeletePhotosByOwner :execresult
 DELETE FROM photos WHERE owner_subject = ?;
 
