@@ -132,7 +132,7 @@ loop:
 
 // listPhotos は一覧を読む。改名対象のカラムは応答に含まれる。
 func listPhotos(client *http.Client, base, token string, c *counters) {
-	req, _ := http.NewRequest(http.MethodGet, base+"/photos", nil)
+	req, _ := http.NewRequest(http.MethodGet, base+"/v2/photos", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	do(client, req, c)
 }
@@ -144,7 +144,7 @@ func createPhoto(client *http.Client, base, token string, c *counters) {
 		"caption":      fmt.Sprintf("loadgen %d", time.Now().UnixNano()),
 		"content_type": "image/png",
 	})
-	req, _ := http.NewRequest(http.MethodPost, base+"/photos", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, base+"/v2/photos", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	do(client, req, c)
