@@ -43,6 +43,7 @@ type PhotoRepository interface {
 	Save(ctx context.Context, p *domain.Photo) error
 	Delete(ctx context.Context, id domain.PhotoID) error
 	DeleteByOwner(ctx context.Context, ownerSubject string) (int, error)
+	ListByOwner(ctx context.Context, ownerSubject string) ([]*domain.Photo, error)
 	ListStalePending(ctx context.Context, before time.Time, limit int) ([]*domain.Photo, error)
 }
 
@@ -160,13 +161,34 @@ func (c *PhotoCommands) CommitUpload(ctx context.Context, id domain.PhotoID) (*d
 	if err := c.can(ctx, ActionEdit, id); err != nil {
 		return nil, err
 	}
-	var photo *domain.Photo
-	err := c.atomic.Do(ctx, func(ctx context.Context) error {
+	// オブジェクトの存在確認は **tx の外**でやる。S3 は管理下の相手ではないので
+	// Atomic の条件(2)「短いタイムアウトを付与できる」を満たさず、内部-03 自身が
+	// 「Atomic に載せられない」と書いている。tx 内で呼ぶと FOR UPDATE の行ロックと
+	// DB 接続を握ったまま外部の応答を待つことになる(#85 C-1)。
+	//
+	// 先に読むぶん「Stat の後に誰かがオブジェクトを消す」窓は開くが、その窓で困るのは
+	// 「ready なのに実体がない」状態で、これは Reclaim が pending を掃除するのと同じ
+	// 種類の後追い可能なズレ。ロック保持で全リクエストを詰まらせる代償のほうが高い。
+	var (
+		photo *domain.Photo
+		key   string
+	)
+	if err := c.atomic.Do(ctx, func(ctx context.Context) error {
 		p, err := c.photos.Get(ctx, id)
 		if err != nil {
 			return err
 		}
-		info, err := c.images.Stat(ctx, p.ObjectKey())
+		key = p.ObjectKey()
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	info, err := c.images.Stat(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	err = c.atomic.Do(ctx, func(ctx context.Context) error {
+		p, err := c.photos.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -232,15 +254,70 @@ func (c *PhotoCommands) Publish(ctx context.Context, id domain.PhotoID) (*domain
 	return photo, err
 }
 
-// DeleteByOwner は所有者の写真を全て削除し、対応するタプルも落とす。
+// DeleteByOwner は所有者の写真を、オブジェクトとタプルまで含めて削除する。
+//
+// 以前は DB の行だけを消していた(#85 C-3)。行が消えると object_key を二度と
+// 辿れないので、**全画像がバケットに残って回収不能**になり、owner タプルも
+// 永久に残っていた。孤児タプルは無害ではない: localauthz の operator 経路は
+// owner タプルをリソースの存在証明として使う(ListAccessible)。
+//
+// 認可は **operator 権限**で見る。アカウント削除はオペレータの操作であって
+// 写真ごとの owner 権限ではない。ActionDelete(= owner relation)で判定すると、
+// operator が継承するのは viewer / editor だけなので、この経路は必ず拒否される
+// (core/authz/localauthz の fromParent)。
+//
+// 順序は Reclaim と同じ「無害な側から」: オブジェクト → 行 → タプル。
+// 途中で落ちたときに残るのは「行はあるが画像がない」(表示経路には status で
+// 出ない)か「タプルだけ残る」で、どちらも後から掃除できる。逆順にすると
+// 「行が無いのに画像が残る」= 辿れないゴミになる。
+//
+// オブジェクトの削除は tx の外でやる(C-1 と同じ理由。S3 は Atomic に載らない)。
 func (c *PhotoCommands) DeleteByOwner(ctx context.Context, ownerSubject string) (int, error) {
+	res, err := c.authorizer.Can(ctx, authz.Request{
+		Action: ActionOperate, ResourceType: "platform", ResourceID: "main",
+	})
+	if err != nil {
+		return 0, err
+	}
+	if !res.Allowed {
+		return 0, ErrForbidden
+	}
+
+	photos, err := c.photos.ListByOwner(ctx, ownerSubject)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range photos {
+		if err := c.images.Delete(ctx, p.ObjectKey()); err != nil {
+			return 0, err
+		}
+	}
+
 	var deleted int
-	err := c.atomic.Do(ctx, func(ctx context.Context) error {
+	if err := c.atomic.Do(ctx, func(ctx context.Context) error {
 		n, err := c.photos.DeleteByOwner(ctx, ownerSubject)
 		deleted = n
 		return err
-	})
-	return deleted, err
+	}); err != nil {
+		return 0, err
+	}
+
+	tuples := make([]authz.Tuple, 0, len(photos))
+	for _, p := range photos {
+		tuples = append(tuples, authz.Tuple{
+			Subject:  authz.UserRef(p.OwnerSubject()),
+			Relation: "owner",
+			Object:   authz.ObjectRef(ResourceType, fmt.Sprint(p.ID())),
+		})
+	}
+	if len(tuples) > 0 {
+		if err := c.relations.DeleteRelations(ctx, tuples); err != nil {
+			// 行は消えている。タプルだけ残った状態は observable なので、
+			// 呼び出し側に失敗として返して再実行させる(冪等に書いてある)
+			return deleted, err
+		}
+	}
+	return deleted, nil
 }
 
 func (c *PhotoCommands) can(ctx context.Context, action string, id domain.PhotoID) error {
