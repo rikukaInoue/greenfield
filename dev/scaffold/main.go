@@ -134,6 +134,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LO
 		}
 	}
 	fmt.Printf("generated services/%s (ports %d/%d/%d) and services/%s-client\n", name, d.Base, d.Internal, d.Admin, name)
+	fmt.Println("次に生成物を揃える（CI の api:check / client:check が要求する）: mise run api && mise run client")
 	return nil
 }
 
