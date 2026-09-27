@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -23,6 +24,12 @@ const (
 	Admin    Listener = "admin"    // 社内オペレータ
 	Internal Listener = "internal" // サービス間
 )
+
+// Route は登録されたルート1つ分。
+type Route struct {
+	Method string
+	Path   string
+}
 
 // Listeners は OpenAPI の出力順を固定するための一覧。
 var Listeners = []Listener{External, Admin, Internal}
@@ -116,4 +123,25 @@ func requireScope(scope string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(r.Context()))
 		})
 	}
+}
+
+// Routes は登録されたルートをメソッドとパスの順に返す。
+// 起動時のログや、リスナーごとに別の面が立っていることを検査するテストで使う。
+func (a API) Routes() []Route {
+	mux, ok := a.Handler.(*chi.Mux)
+	if !ok {
+		return nil
+	}
+	var out []Route
+	_ = chi.Walk(mux, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		out = append(out, Route{Method: method, Path: route})
+		return nil
+	})
+	slices.SortFunc(out, func(x, y Route) int {
+		if c := strings.Compare(x.Path, y.Path); c != 0 {
+			return c
+		}
+		return strings.Compare(x.Method, y.Method)
+	})
+	return out
 }

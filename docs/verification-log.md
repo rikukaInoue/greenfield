@@ -1050,3 +1050,58 @@ owner タプルが残る。`reclaim` の既定（`--older-than 1h --limit 100`�
 - [ ] 検証の記録は「測った範囲」と「設計上の期待」を分けて書く。
       主張の範囲が測定より広いと、後から読んだ人が検証済みだと誤認する
 - [ ] 手動実行の結果を環境の性質として書かない。自動経路（タスク / CI）に載せてから性質として主張する
+
+---
+
+## 2026-09-27 — 監査の修正 6: 主張の裏付けになるテストを置く（#88）
+
+`docs/audit-2026-09-27.md` の A-4。1.3b のログに「`app/routing_test.go` に `:verb` 到達性の
+回帰テストを置いた」と書いたが**置いていなかった**（デバッグ中に削除して復元せず）。
+ルーティングを覆うテストは1本も無い状態だった。実際に書いた。
+
+### 置いたテスト（`services/photo/app/routing_test.go`）
+
+| テスト | 何を固定するか |
+|---|---|
+| `TestRoutesAreReachable` | 9経路すべてがハンドラへ**パスパラメータ付きで**振り分けられる |
+| `TestListenersDoNotShareRoutes` | リスナーごとのルート表が厳密に一致する（他系統のパスが存在しない） |
+| `TestHealthzOnEveryListener` | 3リスナーすべてで `/healthz` が 200 |
+| `TestSpecIsNotServed` | `/openapi.json` `/docs` `/schemas/...` がすべて 404 |
+| `TestCORSIsClosed` | どのリスナーでも `Access-Control-Allow-*` を返さない |
+
+`core/httpapi` に `API.Routes()` を追加した。ルート表の検査に使うほか、起動時のログにも使える口である
+（`chi` を各サービスの直接依存にしたくなかったため、ルータを扱うコードは core に閉じた）。
+
+### 退行を実際に検出できるか確かめた
+
+`core/httpapi` を **Echo に戻して**テストを走らせた（ADR 0001 の判断を覆す変更の模擬）。
+
+```
+--- FAIL: TestRoutesAreReachable/external_POST_/photos/1:commit
+    status = 422 body={"errors":[{"message":"required path parameter is missing","location":"path.id"}]}
+--- FAIL: TestRoutesAreReachable/external_POST_/photos/1:publish
+--- FAIL: TestRoutesAreReachable/admin_POST_/accounts/alice:delete
+--- FAIL: TestListenersDoNotShareRoutes
+```
+
+`:verb` を持つ3経路すべてが落ちる。**これが元のバグの症状そのもの**である。
+
+### 気づき
+
+1. **最初の版は Echo でも通ってしまった。** 「404 / 405 でなければ到達」という判定にしていたため、
+   Echo が返す 422 を「到達した」と数えていた。元のバグが 405 として現れたのは
+   `GET /photos/{id}` がパスを拾ったという**その時の経路構成の偶然**であって、
+   症状は 422（`path.id` の欠落）である。判定に `"location":"path."` を含む 422 を加えて解決した。
+   **退行テストは、実際に退行させて落ちることを確かめないと書けていない**
+2. リスナーの分離は HTTP では検査できなかった。internal はスコープ要求のミドルウェアが
+   ルーティングより先に走り、存在しないパスにも 401 を返す。ルート表を直接見る形に変えた。
+   **ミドルウェアがルーティングより先に走る構成では、HTTP の応答から経路の有無を判定できない**
+3. `deps` を nil で渡すとハンドラが nil 参照で panic するが、それは「振り分けられた」証拠である。
+   `serve` が panic を拾って到達として扱う。ルーティングのテストに依存の組み立ては要らない
+
+### 還流
+
+- [ ] 退行テストは、**実際に退行させて落ちることを確かめる**。症状を取り違えると（405 と思っていたが
+      実際は 422）、テストは書いたのに守っていない状態になる
+- [ ] ミドルウェアがルーティングより先に走る構成では、HTTP の応答から経路の有無を判定できない。
+      ルート表を取り出す口を持たせておく（起動時のログにも使える）
