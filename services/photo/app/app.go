@@ -26,14 +26,19 @@ import (
 	"github.com/rikukaInoue/greenfield/services/photo/flagsource"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/external"
+	externalv2 "github.com/rikukaInoue/greenfield/services/photo/handler/external/v2"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
 	"github.com/rikukaInoue/greenfield/services/photo/readmodel"
 	"github.com/rikukaInoue/greenfield/services/photo/repository"
 	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 )
 
-// Version は OpenAPI の info.version。破壊的変更時はメジャーを上げる。
-const Version = "1.0.0"
+// Version / VersionV2 は各メジャーの info.version。既存のメジャーへ破壊的変更は入れず、
+// 次のメジャーのアダプタとして並行提供する（docs/adr/0017）。
+const (
+	Version   = "1.0.0"
+	VersionV2 = "2.0.0"
+)
 
 // InternalScope は internal リスナーが要求するスコープ。
 const InternalScope = "internal:photo"
@@ -150,6 +155,7 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 
 	ext := httpapi.New(httpapi.External, base)
 	external.Register(ext, external.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
+	externalv2.Register(ext.AddMajor(2, VersionV2), externalv2.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
 
 	adm := httpapi.New(httpapi.Admin, base)
 	admin.Register(adm, admin.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
