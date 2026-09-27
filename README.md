@@ -23,7 +23,7 @@ Phase 0〜6 は完全ローカル（クラウド費用ゼロ）、AWS は Phase 
 
 - **Milestone** = Phase 0〜7
 - **Issue** = ロードマップの各ステージ（`kind:stage`）と検証チェックリストの各項目（`kind:check`）。チェック項目 #N は Issue #N と番号を揃えてある
-- 証跡は `docs/verification-log.md` に追記する
+- 証跡は `docs/verification-log/` に1エントリ1ファイルで追加し、`docs/verification-log.md` の索引に1行足す
 
 ## 開発
 
