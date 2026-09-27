@@ -84,21 +84,37 @@ func (q *Queries) ListPhotos(ctx context.Context, limit int32) ([]Photo, error) 
 }
 
 const listPhotosByIDs = `-- name: ListPhotosByIDs :many
-SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id IN (/*SLICE:ids*/?) AND status = 'ready' ORDER BY created_at DESC
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos
+WHERE id IN (/*SLICE:ids*/?)
+  AND status = 'ready'
+  AND (? = '' OR visibility = ?)
+ORDER BY created_at DESC
+LIMIT ?
 `
 
-// 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る
-func (q *Queries) ListPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, error) {
+type ListPhotosByIDsParams struct {
+	Ids        []uint64
+	Visibility PhotosVisibility
+	Limit      int32
+}
+
+// 認可付き一覧: ListAccessible で得た ID 群を WHERE IN で絞る。
+// visibility の絞り込みと LIMIT は **SQL でやる**。以前はハンドラが Go 側で
+// 絞っていたが、件数を切った後に絞るので公開写真が取りこぼされていた（#91 E）。
+func (q *Queries) ListPhotosByIDs(ctx context.Context, arg ListPhotosByIDsParams) ([]Photo, error) {
 	query := listPhotosByIDs
 	var queryParams []interface{}
-	if len(ids) > 0 {
-		for _, v := range ids {
+	if len(arg.Ids) > 0 {
+		for _, v := range arg.Ids {
 			queryParams = append(queryParams, v)
 		}
-		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(arg.Ids))[1:], 1)
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
 	}
+	queryParams = append(queryParams, arg.Visibility)
+	queryParams = append(queryParams, arg.Visibility)
+	queryParams = append(queryParams, arg.Limit)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err

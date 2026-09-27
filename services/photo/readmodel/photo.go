@@ -37,12 +37,16 @@ func (r *PhotoReader) Detail(ctx context.Context, id domain.PhotoID) (usecase.Ph
 }
 
 // ListByIDs は ID 群に一致する写真を返す。認可付き一覧の WHERE IN に使う。
-func (r *PhotoReader) ListByIDs(ctx context.Context, ids []int64, limit int) ([]usecase.PhotoView, error) {
+// visibility が空でなければその公開状態だけに絞る。**絞り込みは SQL 側**で、
+// 件数を切る前に効く（Go 側で後から絞ると取りこぼす。#91 E）。
+func (r *PhotoReader) ListByIDs(ctx context.Context, ids []int64, visibility string, limit int) ([]usecase.PhotoView, error) {
 	u := make([]uint64, 0, len(ids))
 	for _, id := range ids {
 		u = append(u, uint64(id))
 	}
-	rows, err := r.q.ListPhotosByIDs(ctx, u)
+	rows, err := r.q.ListPhotosByIDs(ctx, sqlcgen.ListPhotosByIDsParams{
+		Ids: u, Visibility: sqlcgen.PhotosVisibility(visibility), Limit: int32(limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("readmodel: list by ids: %w", err)
 	}

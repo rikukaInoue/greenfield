@@ -12,11 +12,9 @@ import (
 
 // PhotoView は一覧・詳細で返す読み取り用の形。Entity を経由しない。
 type PhotoView struct {
-	ID      int64
-	OwnerID string
-	Caption string
-	// Title は改名中の新カラム。表示に使うかはフラグで決まる（contract 後に消す）
-	Title      string
+	ID         int64
+	OwnerID    string
+	Caption    string
 	Visibility string
 	GearItemID *int64
 	Status     string
@@ -30,7 +28,7 @@ type PhotoView struct {
 // PhotoReader は Read Model の取得。実装は readmodel パッケージが持つ。
 type PhotoReader interface {
 	Detail(ctx context.Context, id domain.PhotoID) (PhotoView, error)
-	ListByIDs(ctx context.Context, ids []int64, limit int) ([]PhotoView, error)
+	ListByIDs(ctx context.Context, ids []int64, visibility string, limit int) ([]PhotoView, error)
 	ListByOwner(ctx context.Context, ownerSubject string, limit int) ([]PhotoView, error)
 	ListAll(ctx context.Context, limit int) ([]PhotoView, error)
 	ListPublicByGearItem(ctx context.Context, gearItemID int64, limit int) ([]PhotoView, error)
@@ -96,7 +94,9 @@ func (q *PhotoQueries) Detail(ctx context.Context, id domain.PhotoID, consistenc
 }
 
 // List は主体が見られる写真を返す。ListAccessible が返した ID を WHERE IN で絞る。
-func (q *PhotoQueries) List(ctx context.Context, limit int) ([]PhotoView, error) {
+// visibility が空でなければその公開状態だけを返す。**絞り込みを呼び出し側で
+// やらせない**のは、件数を切った後に絞ると取りこぼすため（#91 E）。
+func (q *PhotoQueries) List(ctx context.Context, visibility string, limit int) ([]PhotoView, error) {
 	refs, err := q.lister.ListAccessible(ctx, ActionView, ResourceType)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (q *PhotoQueries) List(ctx context.Context, limit int) ([]PhotoView, error)
 	if len(ids) == 0 {
 		return []PhotoView{}, nil
 	}
-	vs, err := q.reader.ListByIDs(ctx, ids, limit)
+	vs, err := q.reader.ListByIDs(ctx, ids, visibility, limit)
 	if err != nil {
 		return nil, err
 	}

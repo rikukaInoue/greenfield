@@ -54,7 +54,6 @@ var actionRelations = localauthz.Mapping{
 	usecase.ActionView:    "viewer",
 	usecase.ActionEdit:    "editor",
 	usecase.ActionPublish: "editor",
-	usecase.ActionDelete:  "owner",
 	usecase.ActionOperate: "operator",
 }
 
@@ -154,7 +153,7 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	}
 
 	ext := httpapi.New(httpapi.External, base)
-	externalv2.Register(ext.AddMajor(2, VersionV2), externalv2.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
+	externalv2.Register(ext.AddMajor(2, VersionV2), externalv2.Deps{Commands: deps.Commands, Queries: deps.Queries})
 
 	adm := httpapi.New(httpapi.Admin, base)
 	admin.Register(adm, admin.Deps{Commands: deps.Commands, Queries: deps.Queries, Assurance: deps.Assurance})
