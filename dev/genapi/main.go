@@ -51,7 +51,11 @@ func main() {
 			if !ok {
 				continue
 			}
-			for major, h := range api.Majors() {
+			majors := api.Majors()
+			for major, h := range majors {
+				if retired(majors, major) {
+					continue
+				}
 				name := specFile(l, major)
 				generated[name] = true
 				want, err := marshal(h)
@@ -103,6 +107,20 @@ func main() {
 	if *check {
 		fmt.Println("genapi: すべてのスペックが最新")
 	}
+}
+
+// retired は、上位のメジャーがあり自身の操作が0件のメジャー（アダプタを削除した旧版）か。
+// 操作の無い骨格（scaffold 直後）のメジャー1は廃止扱いにしない。
+func retired(majors map[int]huma.API, major int) bool {
+	if len(majors[major].OpenAPI().Paths) > 0 {
+		return false
+	}
+	for m := range majors {
+		if m > major {
+			return true
+		}
+	}
+	return false
 }
 
 // specFile はメジャーに対応するスペックのファイル名を返す。

@@ -27,12 +27,7 @@ func TestRoutesAreReachable(t *testing.T) {
 		method   string
 		path     string
 	}{
-		{httpapi.External, http.MethodPost, "/photos"},
-		{httpapi.External, http.MethodGet, "/photos"},
-		{httpapi.External, http.MethodGet, "/photos/1"},
-		{httpapi.External, http.MethodPost, "/photos/1:commit"},
-		{httpapi.External, http.MethodPost, "/photos/1:publish"},
-		// メジャー2（docs/adr/0017）。同じリスナーで /v2 配下に並行提供する
+		// external はメジャー2のみ（docs/adr/0017。メジャー1は廃止済み）
 		{httpapi.External, http.MethodPost, "/v2/photos"},
 		{httpapi.External, http.MethodGet, "/v2/photos"},
 		{httpapi.External, http.MethodGet, "/v2/photos/1"},
@@ -63,11 +58,6 @@ func TestListenersDoNotShareRoutes(t *testing.T) {
 	want := map[httpapi.Listener][]httpapi.Route{
 		httpapi.External: {
 			{Method: "GET", Path: "/healthz"},
-			{Method: "GET", Path: "/photos"},
-			{Method: "POST", Path: "/photos"},
-			{Method: "GET", Path: "/photos/{id}"},
-			{Method: "POST", Path: "/photos/{id}:commit"},
-			{Method: "POST", Path: "/photos/{id}:publish"},
 			{Method: "GET", Path: "/v2/photos"},
 			{Method: "POST", Path: "/v2/photos"},
 			{Method: "GET", Path: "/v2/photos/{id}"},
@@ -94,6 +84,23 @@ func TestListenersDoNotShareRoutes(t *testing.T) {
 			}
 			if !slices.Equal(got, want[l]) {
 				t.Errorf("ルートが期待と違う\n got: %v\nwant: %v", got, want[l])
+			}
+		})
+	}
+}
+
+// 廃止したメジャー1のパスには届かない（docs/adr/0017）。
+func TestRetiredMajorIsGone(t *testing.T) {
+	apis := app.APIs(nil)
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/photos"},
+		{http.MethodPost, "/photos"},
+		{http.MethodGet, "/photos/1"},
+		{http.MethodPost, "/photos/1:commit"},
+	} {
+		t.Run(c.method+" "+c.path, func(t *testing.T) {
+			if got := serve(t, apis, httpapi.External, c.method, c.path); got.reached {
+				t.Fatalf("廃止した v1 のパスに到達した（status=%d）", got.code)
 			}
 		})
 	}
