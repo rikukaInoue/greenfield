@@ -95,3 +95,5 @@ func attributes(ctx context.Context) map[string]any {
 	}
 	return map[string]any{"subject": p.Subject, "kind": int(p.Kind)}
 }
+
+// 実験用（マージしない）: exp/23-core-only
