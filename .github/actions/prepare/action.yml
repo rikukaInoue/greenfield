@@ -1,5 +1,12 @@
 name: prepare
-description: mise のツールを入れ、services の MySQL に database と GRANT を用意する
+description: mise のツールと Go のキャッシュを用意し、services の MySQL に database と GRANT を流す
+inputs:
+  cache-key:
+    description: >
+      Go のビルドキャッシュを分ける単位。モジュールごとに別のキャッシュにする
+      （1つのキーを共有すると、先に保存したジョブ以外は積み増せない）。
+    required: false
+    default: shared
 runs:
   using: composite
   steps:
@@ -7,6 +14,20 @@ runs:
       with:
         install: true
         cache: true
+
+    # ツールだけキャッシュしても、毎ジョブが依存グラフを丸ごとコンパイルし直す。
+    # 実測（run 36302711486）で check ステップが 43〜252 秒かかっていた主因がこれ。
+    - name: Go とリンタのキャッシュ
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+          ~/.cache/golangci-lint
+        key: go-${{ runner.os }}-${{ inputs.cache-key }}-${{ hashFiles('**/go.sum', 'go.work.sum') }}
+        # go.sum が変わっても直前のキャッシュから積み増せるようにする
+        restore-keys: |
+          go-${{ runner.os }}-${{ inputs.cache-key }}-
 
     - name: mysql クライアントを用意する
       shell: bash
