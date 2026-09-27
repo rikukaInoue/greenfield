@@ -235,10 +235,15 @@ dir = "frontend"
 run = "pnpm dev"
 
 [tasks."web:check"]
-description = "生成型の一致 + typecheck + build（CI）"
+description = "生成型の一致 + typecheck + 単体テスト + build（CI）"
 depends = ["web:install"]
 dir = "frontend"
-run = ["pnpm --filter @greenfield/photo-api gen:check", "pnpm typecheck", "pnpm build"]
+run = [
+  "pnpm --filter @greenfield/photo-api gen:check",
+  "pnpm typecheck",
+  "pnpm --filter @greenfield/web test:unit",
+  "pnpm build",
+]
 
 [tasks."web:e2e"]
 description = "ブラウザ E2E（Playwright）。photo と SSR(:3000) は未起動なら自動で立てる"
