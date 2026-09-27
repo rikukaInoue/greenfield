@@ -77,3 +77,4 @@ otelで昇格シグナルの最小ダッシュボード（プール使用率・a
 ## Phase 7: AWS検証（任意・短期間の使い捨て）
 
 `infra/` のTerraformで最小構成（単一VPC + ALB + ECS + RDS MySQL）を立て、ローカルでは代替だった部分だけを実機で再演し、**当日〜数日でdestroyする**。対象: (1) ECSネイティブB/G・カナリアで#24/#26を再演（2.3のデプロイ先をECSへ差し替えるだけの形にしてある）、(2) 実SNS/SQS FIFOでLocalStackとの挙動差分の確認（#8/#9再演）、(3) AppConfig用のOpenFeatureプロバイダを自作し、flagdからの差し替えでusecase/handlerが無変更であることを確認（docs/adr/0011）、(4) 実S3でRustFSとの挙動差分の確認、(5) （さらに任意）Aurora MySQLでのINSTANT DDL挙動。apply→destroyが素直に繰り返せること自体がIaC（infra/）の検証になる。費用は数日で収まる規模に留め、予算上限を決めてから立てる。
+
