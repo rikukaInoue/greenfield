@@ -70,11 +70,13 @@ type Eventual interface {
 ```go
 err := u.atomic.Do(ctx, func(ctx context.Context) error {
     if err := u.orders.Create(ctx, order); err != nil { return err }
-    return u.relations.WriteRelations(ctx, tuples) // Atomic判定済み（§6.2）
+    if err := u.relations.WriteRelations(ctx, tuples); err != nil { return err } // Atomic判定済み（§6.2）
+    // outboxへのINSERTは業務データと同一tx。ここを外に出すと「業務データはあるが
+    // 送信予定がない」状態が作れてしまい、Eventualの到達保証が崩れる（§2.3）
+    return u.eventual.Publish(ctx, OrderCreatedEvent{...})
 })
 // ...
-_ = u.eventual.Publish(ctx, OrderCreatedEvent{...}) // 到達すればよい
-u.tryRecordMetrics(ctx, ...)                        // 欠落してもよい
+u.tryRecordMetrics(ctx, ...) // 欠落してもよい
 ```
 
 この命名により、コードレビューにおいて「なぜこの書き込みがAtomicの中にあるのか」という問いが名前だけで成立し、判定条件（上記3条件）との突き合わせに議論が直結する。
@@ -83,15 +85,17 @@ Atomicの実装は次のパターンを全サービス共通の規約とする�
 
 この構成により、Repositoryインターフェースの署名にtx引数が現れず、UseCaseは `database/sql` に依存せず、テストでは「fnをそのまま実行するだけの偽Atomic」とRepositoryモックによりDBなしでユースケースの分岐を検証できる。txを埋めるctxキーは実装パッケージの非公開型とし、UseCase層から取り出せないことをコンパイラで保証する。
 
-実装上の規約を3点定める。第一に、fnのクロージャ内では必ずfnの引数のctxを使用する（引数名を外側と同じ `ctx` にしてシャドーイングし、外側のctxを参照できなくする。外側のctxを使うとそのRepository呼び出しだけtxに参加しない事故になる）。第二に、参照系（一覧・検索）を `Do` で包まない。第三に、処理の配置は次の区分に従う。
+実装上の規約を4点定める。第一に、fnのクロージャ内では必ずfnの引数のctxを使用する（引数名を外側と同じ `ctx` にしてシャドーイングし、外側のctxを参照できなくする。外側のctxを使うとそのRepository呼び出しだけtxに参加しない事故になる）。第二に、参照系（一覧・検索）を `Do` で包まない。第三に、処理の配置は次の区分に従う。
 
 ```
 Doの前:  他サービスからの読み取り・検証、ドメインオブジェクトの生成
-Doの中:  ローカルDB操作 + Atomic判定済みの外部書き込みのみ
-Doの後:  Eventual（Publish）と BestEffort（TryXxx）、および補償を伴う直接呼び出し
+Doの中:  ローカルDB操作（outboxへの記録を含む）+ Atomic判定済みの外部書き込み
+Doの後:  BestEffort（TryXxx）、および補償を伴う直接呼び出し（同期コマンド）
 ```
 
 Atomic内の外部通信を判定制にする物理的な理由は、tx中の外部呼び出しがDBのロックとコネクションを保持したまま相手の応答を待つことになり、相手側の遅延が自サービスのコネクションプール枯渇として伝播するためである。Doの後の直接呼び出し（同期HTTP+補償）は、相手の結果が今の分岐を決める同期コマンド（pending状態パターン）に限って用い、「起きればよい」書き込みは最初からEventual（§2.3）で扱う。同期コマンドで補償が2ステップを超えて連鎖する場合は、ユースケースの設計自体を見直す。
+
+第四に、`Eventual.Publish` はトランザクションの中でしか呼べない。実装はctxからtxを取り出せなければエラーを返し、`Do` の外からの呼び出しを最初の実行で落とす。これは規約を人の注意力ではなく機構で守るための措置である——`Publish` が静かに別txでoutboxへINSERTできてしまうと、「業務データはコミット済みだが送信予定がない」という、後から観測しても復旧できない状態が作れる。§2.3のOutboxが2状態しか作らないという保証は、この1点に依存している。
 
 ### 2.3 Outboxパターン（Eventualの標準実装）
 
