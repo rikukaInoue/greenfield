@@ -35,3 +35,4 @@
 | [0012](0012-eventual-publish-inside-atomic.md) | `Eventual.Publish` は `Atomic.Do` の中で呼ぶ | 要 |
 | [0013](0013-flags-evaluate-in-process.md) | フラグは定義を同期してプロセス内で評価する | 要 |
 | [0014](0014-ssr-does-not-evaluate-flags.md) | SSR はフラグを評価せず、判定結果を「できること」として API から受け取る | 要 |
+| [0015](0015-ci-affected-from-module-graph.md) | CI の対象は go.mod の replace から依存グラフを計算して決める | 要 |

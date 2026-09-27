@@ -1050,6 +1050,31 @@ owner タプルが残る。`reclaim` の既定（`--older-than 1h --limit 100`�
 - [ ] 検証の記録は「測った範囲」と「設計上の期待」を分けて書く。
       主張の範囲が測定より広いと、後から読んだ人が検証済みだと誤認する
 - [ ] 手動実行の結果を環境の性質として書かない。自動経路（タスク / CI）に載せてから性質として主張する
+## 2026-09-27 — ステージ 2.1 差分検知 CI（#44）
+
+### 作ったもの
+
+- `dev/affected`: 変更ファイルと `go.mod` の `replace` から、検査すべきモジュールと frontend の要否を求める（ADR 0015）
+- CI を `changes` → `go`（モジュールごとの matrix）/ `api-breaking` / `frontend` → `check`（集約）に分割
+- mise のタスクを `MODULES` で絞れるようにした（`dev/scripts/modules.sh`）。CI の matrix は同じタスクを流す
+
+### 判定の確認（実リポジトリの依存で、1ファイルだけ変えた場合）
+
+| 変更 | Go の対象 | frontend |
+|---|---|---|
+| `services/photo/usecase/query.go` | photo, dev | 走る（photo の API を使う） |
+| `services/gear/app/app.go` | gear, dev | 走らない |
+| `core/flags/flags.go` | core, photo, gear, dev | 走る |
+| `docs/05-roadmap.md` | なし | 走らない |
+
+client 再生成の波及（gear が photo-client を使う構成）は、まだ実物に利用関係が無いため `dev/affected` のテストで確認した。
+
+### 気づき
+
+1. `modfile.ParseLax` は依存先の go.mod を読むためのもので、`replace` を読み飛ばす。これを使うと依存グラフが空になり、
+   core を変えても core しか検査しない。テストで気づいた（実物の構成で試すまで分からない種類の誤り）
+2. 対象を絞れるようにすると「絞った結果0件」が正当な場合と、打ち間違いで0件になる場合が混ざる。
+   `MODULES` は go.work に無いものを指定したら失敗させ、対象サービスが無い検査は「対象外」と出力して飛ばす
 
 ---
 
