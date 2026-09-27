@@ -6,8 +6,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "gen": "openapi-typescript ../../../api/photo/external.openapi.json -o src/external.gen.ts",
-    "gen:check": "openapi-typescript ../../../api/photo/external.openapi.json -o src/external.gen.ts --check",
+    "gen": "openapi-typescript ../../../api/photo/external.v2.openapi.json -o src/external.v2.gen.ts",
+    "gen:check": "openapi-typescript ../../../api/photo/external.v2.openapi.json -o src/external.v2.gen.ts --check",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

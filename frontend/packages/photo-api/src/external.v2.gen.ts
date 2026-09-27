@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/photos": {
+    "/v2/photos": {
         parameters: {
             query?: never;
             header?: never;
@@ -25,7 +25,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/photos/{id}": {
+    "/v2/photos/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -42,7 +42,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/photos/{id}:commit": {
+    "/v2/photos/{id}:commit": {
         parameters: {
             query?: never;
             header?: never;
@@ -62,7 +62,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/photos/{id}:publish": {
+    "/v2/photos/{id}:publish": {
         parameters: {
             query?: never;
             header?: never;
@@ -346,8 +346,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

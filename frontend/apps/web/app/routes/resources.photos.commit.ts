@@ -8,7 +8,7 @@ export async function action({ params, context }: Route.ActionArgs) {
   const id = Number(params.id);
   if (!Number.isSafeInteger(id) || id < 1) return Response.json({ code: "not_found" }, { status: 404 });
   try {
-    const photo = await unwrap(context.get(photoClientContext).POST("/photos/{id}:commit", { params: { path: { id } } }));
+    const photo = await unwrap(context.get(photoClientContext).POST("/v2/photos/{id}:commit", { params: { path: { id } } }));
     return Response.json({ id: photo.id });
   } catch (err) {
     return toJsonError(err);

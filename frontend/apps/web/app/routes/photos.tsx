@@ -14,7 +14,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const visibility = parseVisibility(new URL(request.url).searchParams.get("visibility"));
   const api = context.get(photoClientContext);
   try {
-    const body = await unwrap(api.GET("/photos", { params: { query: { visibility, limit: 50 } } }));
+    const body = await unwrap(api.GET("/v2/photos", { params: { query: { visibility, limit: 50 } } }));
     return { photos: body.photos ?? [], visibility, canCreate: body.can_create };
   } catch (err) {
     toRouteError(err, request);
