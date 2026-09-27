@@ -1,5 +1,5 @@
 name: prepare
-description: mise のツールと Go のキャッシュを用意し、services の MySQL に database と GRANT を流す
+description: mise のツールと Go のキャッシュを用意し、必要なら MySQL の起動を待って database と GRANT を流す
 inputs:
   cache-key:
     description: >
@@ -7,6 +7,12 @@ inputs:
       （1つのキーを共有すると、先に保存したジョブ以外は積み増せない）。
     required: false
     default: shared
+  mysql:
+    description: >
+      MySQL を使うジョブか。false なら起動待ちも GRANT も飛ばす。
+      DB を使わないモジュールでコンテナを立てないための入口。
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -30,12 +36,27 @@ runs:
           go-${{ runner.os }}-${{ inputs.cache-key }}-
 
     - name: mysql クライアントを用意する
+      if: inputs.mysql == 'true'
       shell: bash
       run: mysql --version || sudo apt-get install -y --no-install-recommends mysql-client
 
+    # 待ち方を ping に寄せてあるのは、呼び出し側が services: でも docker run でも
+    # 同じように使えるようにするため（frontend は services:、go は docker run）。
+    - name: MySQL の起動を待つ
+      if: inputs.mysql == 'true'
+      shell: bash
+      run: |
+        for i in $(seq 1 60); do
+          mysqladmin ping -h 127.0.0.1 -uroot -proot --silent 2>/dev/null && exit 0
+          sleep 2
+        done
+        echo "MySQL が起動しない" >&2
+        exit 1
+
     - name: database と GRANT を用意する
       # compose の init スクリプトと同じものを流す。
-      # docker-entrypoint-initdb.d は services: では使えないため明示的に適用する。
+      # docker-entrypoint-initdb.d は services: / docker run では使えないため明示的に適用する。
+      if: inputs.mysql == 'true'
       shell: bash
       run: |
         for f in deploy/compose/mysql/init/*.sql; do
