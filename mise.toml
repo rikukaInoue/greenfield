@@ -37,7 +37,11 @@ run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go ve
 
 [tasks.test]
 description = "各モジュールを GOWORK=off で go test（DB系のテストは mysql 到達時のみ走る）"
-run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go test ./...) || exit 1; done'
+# -count=1 はテスト結果のキャッシュを無効にする（ビルドキャッシュは効いたまま）。
+# DB を使うテストは外部の MySQL に依存していて入力の純粋な関数ではないので、
+# Go は「MySQL が消えた」ことを知れず、過去の ok を返し続ける。CI でビルド
+# キャッシュを復元するようにした結果、実際に (cached) で素通りしていた。
+run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go test -count=1 ./...) || exit 1; done'
 
 [tasks.fmt]
 description = "gofmt 差分があれば失敗"
