@@ -19,6 +19,9 @@
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    // node --test（型ストリッピング）で走るテストは Node の ESM 解決に従うため
+    // import に .ts を明記する。noEmit なので出力側への影響は無い。
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true
