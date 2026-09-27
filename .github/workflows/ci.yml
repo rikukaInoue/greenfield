@@ -117,6 +117,38 @@ jobs:
       - name: fmt / build / vet / test / lint / 生成物の一致
         run: mise run --quiet check
 
+  # database を跨ぐ外部キーを止める(#136)。跨ぐと親の DDL が子のメタデータロックを取り、
+  # **他サービスのデプロイが ERROR 1205 で落ちる**（通常の読み書きは通るので日常では気づけない）。
+  #
+  # **go ジョブに相乗りさせられない。** あちらは MODULES で 1 サービスに絞るので、
+  # 適用されるマイグレーションも 1 サービス分だけになる。跨ぐ FK は参照先のテーブルが
+  # 無いと張れないので、その状態で検査すると**構造的に必ず「跨ぐ FK は無い」と答える**。
+  # だから全サービス分を 1 つの DB に適用する専用ジョブにしてある。
+  cross-db-fk:
+    needs: changes
+    if: needs.changes.outputs.go != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # prepare より先に投げる（go ジョブと同じ理由: mise のインストールと起動を重ねる）
+      - name: MySQL を起動する
+        run: |
+          docker run -d --name mysql -p 3306:3306 \
+            -e MYSQL_ROOT_PASSWORD=root mysql:8.4
+
+      - uses: ./.github/actions/prepare
+        with:
+          cache-key: cross-db-fk
+          mysql: "true"
+
+      - name: 全サービスのマイグレーションを適用する
+        # MODULES を設定しない = 全サービス。ここを絞ると検査が意味を失う
+        run: mise run --quiet migrate
+
+      - name: database を跨ぐ外部キーが無いか
+        run: mise run --quiet fk:check
+
   api-breaking:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.go != '[]'
@@ -220,7 +252,7 @@ jobs:
   # ブランチ保護の必須チェックはこのジョブだけを指定すればよい（対象外のジョブがスキップでも通る）。
   check:
     if: always()
-    needs: [changes, go, api-breaking, frontend]
+    needs: [changes, go, cross-db-fk, api-breaking, frontend]
     runs-on: ubuntu-latest
     steps:
       - name: 結果をまとめる

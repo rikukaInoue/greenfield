@@ -80,6 +80,14 @@ description = "db/schema.sql がマイグレーションと一致しているか
 depends = ["db:up"]
 run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $s) --check || exit 1; done'
 
+[tasks."fk:check"]
+description = "database を跨ぐ外部キーが無いことを検証（跨ぐと他サービスのデプロイが 1205 で落ちる）"
+depends = ["db:up"]
+# **MODULES で絞らずに全サービスを渡す。** 跨ぐ FK は 2 つ以上の database が揃っていないと
+# 存在し得ないので、1 サービス分しか適用されていない DB に対して実行しても必ず通る。
+# サービス名を引数で渡し、その database が実際に在ることをスクリプト側で確かめる
+run = 'dev/scripts/no-cross-db-fk.sh $(MODULES= dev/scripts/modules.sh --services | xargs -n1 basename)'
+
 [tasks."schema:check-live"]
 description = "実行時の DB が db/schema.sql と一致しているか検証（生成と実行の乖離を検出する）"
 depends = ["db:up"]
