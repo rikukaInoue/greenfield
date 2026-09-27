@@ -17,9 +17,20 @@
 #
 # 同一 database 内の FK は**止めない**。集約内の不変条件として正当で、むしろ張るべき場合がある。
 #
-#   dev/scripts/no-cross-db-fk.sh            # 実行時の DB を見る
-#   MYSQL_CONTAINER=... MYSQL_PORT=...       # schema-dump.sh と同じ流儀で接続先を差せる
+#   dev/scripts/no-cross-db-fk.sh photo gear  # この database が全部ある状態で検査する
+#   MYSQL_CONTAINER=... MYSQL_PORT=...        # schema-dump.sh と同じ流儀で接続先を差せる
+#
+# **検査対象の database 名を必ず渡す。** 跨ぐ FK は定義上 2 つ以上の database が要るので、
+# 1 つしか無い DB に対して実行すると「跨ぐ FK は無い」が必ず返る。最初はこれをモジュール毎の
+# CI ジョブ（MODULES で 1 サービスに絞られる）に置いてしまい、**構造的に何も検出できない検査**
+# になっていた。引数を必須にして、前提が崩れていたら検査自体を失敗させる。
 set -euo pipefail
+
+if [ "$#" -lt 2 ]; then
+  echo "usage: $0 <database> <database> [...]  （跨ぐ FK を検出するには 2 つ以上必要）" >&2
+  exit 2
+fi
+want=("$@")
 
 container=${MYSQL_CONTAINER-greenfield-mysql}
 host=${MYSQL_HOST:-127.0.0.1}
@@ -29,6 +40,26 @@ if [ -n "$container" ]; then
   mysql_root() { docker exec -i "$container" mysql -uroot -proot "$@" 2> >(grep -v "Using a password" >&2); }
 else
   mysql_root() { mysql -h "$host" -P "$port" -uroot -proot "$@" 2> >(grep -v "Using a password" >&2); }
+fi
+
+# 検査の前提を先に確かめる。見るのは **database の存在ではなくテーブルの有無**。
+# database は compose の init SQL（prepare も同じものを流す）が最初に全サービス分作るので、
+# 「database がある」は MODULES で 1 サービスに絞った状態でも成立してしまう。
+# 跨ぐ FK は参照先のテーブルが無いと張れない = テーブルが揃っていない DB では検出できない。
+# 検査は「通った」ではなく「何を見た上で通ったか」まで言えないと意味がない。
+empty=()
+for db in "${want[@]}"; do
+  n=$(mysql_root -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$db';")
+  [ "$n" -gt 0 ] || empty+=("$db")
+done
+if [ "${#empty[@]}" -gt 0 ]; then
+  cat >&2 <<MSG
+検査の前提が崩れている: テーブルが 1 つも無い database: ${empty[*]}
+
+跨ぐ FK は参照先のテーブルが無いと張れないので、この状態では**何も検出できない**。
+全サービスのマイグレーションを適用してから実行する（MODULES で絞ると 1 サービス分しか流れない）。
+MSG
+  exit 1
 fi
 
 # information_schema は「いま DB にある姿」を返す。マイグレーションのファイルを読む形にしないのは、
@@ -48,7 +79,7 @@ rows=$(mysql_root -N -B -e "
   ORDER BY table_schema, table_name;")
 
 if [ -z "$rows" ]; then
-  echo "database を跨ぐ外部キーは無い"
+  echo "database を跨ぐ外部キーは無い（見た database: ${want[*]}）"
   exit 0
 fi
 
