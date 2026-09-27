@@ -37,4 +37,5 @@
 | 2026-09-27 | [監査の修正 6: 主張の裏付けになるテストを置く（#88）](verification-log/2026-09-27-audit-fix-6.md) |
 | 2026-09-27 | [検証ログを1エントリ1ファイルに分割](verification-log/2026-09-27-split-log.md) |
 | 2026-09-27 | [監査の修正 7: 本番の既定値を fail-closed にする（#87）](verification-log/2026-09-27-audit-fix-7.md) |
+| 2026-09-27 | [ステージ 2.2 前半: API のバージョニング規則（ADR 0017、#45 / #16）](verification-log/2026-09-27-stage-22a.md) |
 | 2026-09-27 | [イベント基盤のローカル実装を測る（#75）](verification-log/2026-09-27-event-backend-probe.md) |
