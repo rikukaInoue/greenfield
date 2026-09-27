@@ -52,7 +52,9 @@ func Register(api huma.API, deps Deps) {
 		Summary:     "画像のアップロード完了を確定する",
 		Description: "署名URLへの PUT が終わったら呼ぶ。画像の実体が確認できなければ確定しない。",
 		Tags:        []string{"photos"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
+		// 403 は宣言しない。この操作の拒否は全て 404（存在を伏せる決定）で、
+		// ErrForbidden はここまで届かない。実際に返しうるコードだけ並べる（0.4 / 監査 E）。
+		Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 	}, h.commitPhoto)
 
 	huma.Register(api, huma.Operation{
@@ -62,7 +64,9 @@ func Register(api huma.API, deps Deps) {
 		Summary:     "写真を公開する",
 		Description: "純粋な状態遷移のため :verb を使う。",
 		Tags:        []string{"photos"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
+		// 403 は宣言しない。この操作の拒否は全て 404（存在を伏せる決定）で、
+		// ErrForbidden はここまで届かない。実際に返しうるコードだけ並べる（0.4 / 監査 E）。
+		Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 	}, h.publishPhoto)
 
 	huma.Register(api, huma.Operation{
@@ -71,7 +75,9 @@ func Register(api huma.API, deps Deps) {
 		Path:        "/photos/{id}",
 		Summary:     "写真の詳細（Read Model）",
 		Tags:        []string{"photos"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
+		// 403 は宣言しない。この操作の拒否は全て 404（存在を伏せる決定）で、
+		// ErrForbidden はここまで届かない。実際に返しうるコードだけ並べる（0.4 / 監査 E）。
+		Errors: []int{http.StatusUnauthorized, http.StatusNotFound},
 	}, h.getPhotoDetail)
 
 	huma.Register(api, huma.Operation{
@@ -87,24 +93,27 @@ func Register(api huma.API, deps Deps) {
 
 // Photo は写真の応答表現。
 type Photo struct {
-	ID         int64   `json:"id" example:"1" doc:"写真ID"`
-	OwnerID    string  `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
-	Caption    string  `json:"caption" example:"朝の光" doc:"キャプション"`
-	Visibility string  `json:"visibility" enum:"private,public" example:"public" doc:"公開状態"`
-	Status     string  `json:"status" enum:"pending_upload,ready" example:"ready" doc:"画像のアップロード状態"`
-	GearItemID *int64  `json:"gear_item_id,omitempty" example:"42" doc:"使用機材（gear の item ID）"`
-	GearName   *string `json:"gear_name,omitempty" example:"X-T5" doc:"使用機材の表示名（ReplicaView 由来。業務判断に使わない）"`
-	ImageURL   string  `json:"image_url,omitempty" doc:"画像取得用の署名付きURL。期限付き"`
-	SizeBytes  int64   `json:"size_bytes,omitempty" doc:"画像のバイト数"`
-	CreatedAt  string  `json:"created_at" format:"date-time" doc:"投稿時刻"`
+	ID         int64  `json:"id" example:"1" doc:"写真ID"`
+	OwnerID    string `json:"owner_id" example:"u_01H..." doc:"投稿者のSubject"`
+	Caption    string `json:"caption" example:"朝の光" doc:"キャプション"`
+	Visibility string `json:"visibility" enum:"private,public" example:"public" doc:"公開状態"`
+	Status     string `json:"status" enum:"pending_upload,ready" example:"ready" doc:"画像のアップロード状態"`
+	GearItemID *int64 `json:"gear_item_id,omitempty" example:"42" doc:"使用機材（gear の item ID）"`
+	// gear_name は ReplicaView 由来として契約に載せていたが、replicaview/ は空で
+	// fromView は一度も値を入れていなかった。実装ができるまで契約から外す（監査 E）。
+	ImageURL  string `json:"image_url,omitempty" doc:"画像取得用の署名付きURL。期限付き"`
+	SizeBytes int64  `json:"size_bytes,omitempty" doc:"画像のバイト数"`
+	CreatedAt string `json:"created_at" format:"date-time" doc:"投稿時刻"`
 }
 
 // CreatePhotoInput は投稿コマンドの入力。形式的な検証はこの型が担う。
 type CreatePhotoInput struct {
 	Body struct {
-		Caption     string `json:"caption" maxLength:"1000" doc:"キャプション"`
-		Visibility  string `json:"visibility,omitempty" enum:"private,public" default:"private" doc:"公開状態"`
-		GearItemID  *int64 `json:"gear_item_id,omitempty" minimum:"1" doc:"使用機材（gear の item ID）。指定すると gear への紐付けが pending で始まる"`
+		Caption    string `json:"caption" maxLength:"1000" doc:"キャプション"`
+		Visibility string `json:"visibility,omitempty" enum:"private,public" default:"private" doc:"公開状態"`
+		// 「gear への紐付けが pending で始まる」と書いていたが Create は gear に
+		// 一切接触しない。値を保存するだけなので、そのとおりに書く（監査 E）。
+		GearItemID  *int64 `json:"gear_item_id,omitempty" minimum:"1" doc:"使用機材（gear の item ID）。値を保存するだけで、gear 側への問い合わせや紐付けは行わない"`
 		ContentType string `json:"content_type" enum:"image/jpeg,image/png,image/webp,image/avif" example:"image/jpeg" doc:"アップロードする画像の種類"`
 	}
 }
