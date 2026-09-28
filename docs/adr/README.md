@@ -40,3 +40,4 @@
 | [0017](0017-api-versioning.md) | API のバージョニング（並行提供はアダプタで行い、ファイル名とメジャーを結ぶ） | 要 |
 | [0018](0018-keep-localstack-for-sns-sqs.md) | イベント基盤のローカルは LocalStack を使い続ける | 要 |
 | [0019](0019-httpapi-in-core.md) | huma + chi は `core/httpapi` に閉じて core に置く | 要 |
+| [0020](0020-migration-tool-comparison.md) | マイグレーションツール比較: golang-migrate と goose（草案） | 要 |
