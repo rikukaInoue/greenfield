@@ -20,6 +20,7 @@ driver は合成ルート（`app/`）が注入するため、実装コードは 
 **訂正（監査 C-5）**: 「`core` は `database/sql` にしか依存しない」と書いたが、`core/go.mod` の
 direct require には `go-sql-driver/mysql` が入っている（`localauthz_test.go` がローカルの mysql へ
 接続して検証するため）。**実装は driver を知らないが、モジュールの依存には現れる**。
+テスト専用依存を core に置いてよい条件と判別方法は ADR 0019 に定めた。
 
 ## 影響
 
