@@ -51,6 +51,14 @@ export function createServerClient<Paths extends {}>(opts: ServerClientOptions):
       const token = opts.accessToken();
       if (token) request.headers.set("Authorization", `Bearer ${token}`);
       request.headers.set("X-Request-Id", opts.requestId ?? randomUUID());
+      // **このヘッダは現時点で誰も読んでいない**（サーバ側に Idempotency-Key を読む Go コードは
+      // 無く、`core/httpclient` も未実装。#138）。重複排除としてはまだ機能していない。
+      //
+      // 自動生成はフォールバックで、呼び手が安定キーを渡せばそれを尊重する（has の判定）。
+      // ただし**リトライを入れるならこのフォールバックでは足りない**: 試行ごとに新しい UUID に
+      // なるので、同一操作の再送が別要求として扱われる。安定キーは「操作の同一性」を知っている
+      // 呼び手側でしか作れないため、リトライを入れる時は呼び手からの明示指定を必須にする。
+      // いまリトライ処理が無いので事象としては起きていない（顕在化は 4.1 以降）。
       if (mutating.has(request.method) && !request.headers.has("Idempotency-Key")) {
         request.headers.set("Idempotency-Key", randomUUID());
       }
