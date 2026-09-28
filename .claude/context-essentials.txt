@@ -1,0 +1,12 @@
+# Context Essentials — コンパクション後に再注入される
+
+## 必ず再読するもの
+- CLAUDE.md（作業規律）
+- docs/README.md（設計の入口。01〜05 → conventions/ → adr/）
+- 着手中の issue の自分の宣言コメント
+
+## 恒常的な前提
+- 並行エージェントが常態。着手前に open PR / issue コメントで衝突確認
+- 認証・認可系（Phase 3: Keycloak / OpenFGA / authz サービス）は別エージェントの担当
+- Phase 0〜6 はクラウド費用ゼロが原則（AWS は Phase 7 のみ）
+- マージは CI green + セルフレビュー後（包括承認済み）。課金・削除・リリースは毎回確認
