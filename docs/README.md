@@ -28,6 +28,8 @@
 | 03-platform.md | 認可基盤（authz / OpenFGA）の構築仕様とKeycloak設定 |
 | 04-milestones.md | 検証チェックリスト（26項目） |
 | 05-roadmap.md | 段階検証ロードマップ（Phase 0〜6） |
+| upstream.md | アップストリームパッケージ（還流物の所在・分類・検証記録の対応） |
+| verification-log/ | 検証ログ（1エントリ1ファイル。README.md が索引） |
 | conventions/ | プロダクション版と同一のコード規約（移行記述のみ除去） |
 
 ## 運用規約
