@@ -11,8 +11,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
+
+	coreauthz "github.com/rikukaInoue/greenfield/core/authz"
+	"github.com/rikukaInoue/greenfield/core/authz/oidcauthn"
+	"github.com/rikukaInoue/greenfield/core/problem"
+	"github.com/rikukaInoue/greenfield/core/runtimeenv"
 
 	"github.com/rikukaInoue/greenfield/platform/authz"
 	"github.com/rikukaInoue/greenfield/platform/authz/fga"
@@ -41,9 +47,22 @@ func run() error {
 	if err := client.EnsureModel(ctx, authz.Model); err != nil {
 		return fmt.Errorf("ensure model: %w", err)
 	}
+	var handler http.Handler = authz.NewServer(client, authz.DefaultMapping)
+	// サービス間認証。プライベートネットワークを理由とした無認証は試作でも採らない
+	// （docs/03-platform.md）。OIDC_ISSUER が無い起動は開発用の許可リスト環境のみ許す。
+	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
+		authn, err := oidcauthn.New(ctx, issuer)
+		if err != nil {
+			return fmt.Errorf("oidcauthn: %w", err)
+		}
+		handler = authn.Middleware()(requireScope("internal:platform")(handler))
+		slog.Info("authn enabled", "issuer", issuer, "scope", "internal:platform")
+	} else if err := runtimeenv.RequireDevelopment("authz の無認証待ち受け"); err != nil {
+		return fmt.Errorf("%w（本番は OIDC_ISSUER を設定する）", err)
+	}
 	slog.Info("authz ready", "addr", addr, "openfga", fgaURL, "store_id", client.StoreID())
 
-	srv := &http.Server{Addr: addr, Handler: authz.NewServer(client, authz.DefaultMapping), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 	select {
@@ -76,4 +95,26 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// requireScope は Principal が scope を持たなければ 403 を返す（/healthz は素通し）。
+func requireScope(scope string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/healthz" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			p, ok := coreauthz.PrincipalFrom(r.Context())
+			if !ok {
+				problem.Write(w, r, problem.New(http.StatusUnauthorized, problem.CodeUnauthenticated, "認証が必要"))
+				return
+			}
+			if !slices.Contains(p.Scopes, scope) {
+				problem.Write(w, r, problem.New(http.StatusForbidden, problem.CodeForbidden, "スコープ "+scope+" が必要"))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

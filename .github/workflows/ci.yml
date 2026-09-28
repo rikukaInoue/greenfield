@@ -205,7 +205,10 @@ jobs:
   # ここは platform/authz が影響範囲に入ったときだけ実インフラで検証する。
   authz:
     needs: changes
-    if: contains(fromJSON(needs.changes.outputs.go), './platform/authz')
+    # photo の配線（oidcauthn+authzhttp）も一気通貫で確かめるため、photo の変更でも起こす
+    if: >-
+      contains(fromJSON(needs.changes.outputs.go), './platform/authz') ||
+      contains(fromJSON(needs.changes.outputs.go), './services/photo')
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -257,6 +260,60 @@ jobs:
 
       - name: 認可の判定・一覧・冪等・作成直後可視（check #7）
         run: dev/scripts/authz-check.sh
+
+      # --- ここから 3.3: 本番アダプタへの差し替えの一気通貫（#27） ---
+      - name: Keycloak を起動する
+        run: |
+          docker run -d --name keycloak --network host \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -e KC_HTTP_PORT=8180 \
+            -v "$PWD/deploy/compose/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:8180/realms/greenfield && exit 0
+            sleep 3
+          done
+          echo "Keycloak が起動しない" >&2; docker logs keycloak | tail -30; exit 1
+
+      - name: authz を OIDC 付きで再起動する
+        run: |
+          pkill -f 'exe/authz' 2>/dev/null || true
+          sleep 1
+          ( cd platform/authz && GOWORK=off \
+            OIDC_ISSUER=http://localhost:8180/realms/greenfield \
+            OPENFGA_URL=http://localhost:8080 \
+            go run ./cmd/authz & )
+          for i in $(seq 1 40); do
+            curl -sf -o /dev/null http://localhost:8100/healthz && exit 0
+            sleep 2
+          done
+          echo "authz が起動しない" >&2; exit 1
+        env:
+          ENV: ci
+
+      - name: photo のマイグレーションを流す
+        run: MODULES=./services/photo mise run --quiet migrate
+
+      - name: photo を本番アダプタ（OIDCDeps）で起動する
+        run: |
+          ( cd services/photo && GOWORK=off \
+            OIDC_ISSUER=http://localhost:8180/realms/greenfield \
+            AUTHZ_URL=http://localhost:8100 \
+            M2M_TOKEN_URL=http://localhost:8180/realms/greenfield/protocol/openid-connect/token \
+            M2M_CLIENT_SECRET=svc-photo-dev-secret \
+            PHOTO_EXTERNAL_ADDR=:18080 PHOTO_INTERNAL_ADDR=:18081 PHOTO_ADMIN_ADDR=:18082 \
+            go run ./cmd/photo & )
+          for i in $(seq 1 40); do
+            curl -sf -o /dev/null http://localhost:18080/healthz && exit 0
+            sleep 2
+          done
+          echo "photo が起動しない" >&2; exit 1
+
+      - name: 差し替え後の認証・認可の一気通貫（#27）
+        run: dev/scripts/authn-check.sh
+        env:
+          PHOTO_EXTERNAL_URL: http://localhost:18080
+          PHOTO_INTERNAL_URL: http://localhost:18081
 
 
   frontend:

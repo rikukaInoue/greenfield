@@ -1018,7 +1018,8 @@
         "phone",
         "offline_access",
         "organization",
-        "microprofile-jwt"
+        "microprofile-jwt",
+        "internal:platform"
       ]
     },
     {
@@ -1129,7 +1130,8 @@
         "offline_access",
         "organization",
         "microprofile-jwt",
-        "internal:gear"
+        "internal:gear",
+        "internal:platform"
       ]
     }
   ],
@@ -1817,6 +1819,16 @@
           }
         }
       ]
+    },
+    {
+      "id": "4d45df55-c871-506e-9b1c-876e52a455f3",
+      "name": "internal:platform",
+      "description": "platform/authz の API を呼ぶ権限",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
   "defaultDefaultClientScopes": [
