@@ -59,7 +59,7 @@ func ConfigFromEnv() Config {
 		ExternalAddr:  envOr("{{.Env}}_EXTERNAL_ADDR", ":{{.Base}}"),
 		InternalAddr:  envOr("{{.Env}}_INTERNAL_ADDR", ":{{.Internal}}"),
 		AdminAddr:     envOr("{{.Env}}_ADMIN_ADDR", ":{{.Admin}}"),
-		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
+		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"),
 	}
 }
 

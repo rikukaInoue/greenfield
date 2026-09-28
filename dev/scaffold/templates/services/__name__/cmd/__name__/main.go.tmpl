@@ -43,7 +43,7 @@ func runMigrate(ctx context.Context, args []string) error {
 	}
 	dsn := os.Getenv("{{.Env}}_MIGRATE_DSN")
 	if dsn == "" {
-		dsn = "{{.Name}}_migrate:{{.Name}}_migrate@tcp(127.0.0.1:3306)/{{.Name}}"
+		dsn = "{{.Name}}_migrate:{{.Name}}_migrate@tcp(127.0.0.1:13306)/{{.Name}}"
 	}
 	switch args[0] {
 	case "expand":
