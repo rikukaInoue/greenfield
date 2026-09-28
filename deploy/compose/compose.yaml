@@ -100,6 +100,37 @@ services:
       timeout: 5s
       retries: 40
 
+  # OpenFGA（authzサービスの裏。Phase 3.2）。datastore は mysql（本番と同エンジン、
+  # docs/02-architecture.md）。マイグレーションは専用の使い捨てサービスで先に流す。
+  openfga-migrate:
+    image: openfga/openfga:v1.8
+    container_name: greenfield-openfga-migrate
+    command: ["migrate"]
+    environment:
+      OPENFGA_DATASTORE_ENGINE: mysql
+      OPENFGA_DATASTORE_URI: openfga:openfga@tcp(mysql:3306)/openfga?parseTime=true
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  openfga:
+    image: openfga/openfga:v1.8
+    container_name: greenfield-openfga
+    command: ["run"]
+    environment:
+      OPENFGA_DATASTORE_ENGINE: mysql
+      OPENFGA_DATASTORE_URI: openfga:openfga@tcp(mysql:3306)/openfga?parseTime=true
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    ports:
+      # 8280 = HTTP API。8080 はこのマシンで別用途に使われがちなので避ける
+      - "8280:8080"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    # イメージは distroless でシェルを持たないため healthcheck は書けない（flagd と同じ）。
+    # 到達性は authz サービス側の起動リトライが吸収する。
+
   # --- デプロイ先（ステージ 2.3 / #46）------------------------------------
   # 手元マシンの compose がデプロイ先。ECS は Phase 7 で、そのときは
   # このサービス定義がタスク定義に置き換わる（デプロイ順序の形は変えない）。

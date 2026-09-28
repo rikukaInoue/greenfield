@@ -7,5 +7,6 @@ use (
 	./services/photo-client
 	./services/gear
 	./services/gear-client
+	./platform/authz
 	// scaffold:use
 )

@@ -184,6 +184,20 @@ run = [
   'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]
 
+[tasks."authz:up"]
+description = "OpenFGA を起動する（mysql datastore、migrate 込み）。CI では起動済みとみなす"
+run = '[ -n "${CI:-}" ] || docker compose up -d --wait openfga'
+
+[tasks."authz:run"]
+description = "authz サービスを起動する（:8100。裏は OpenFGA :8280）"
+depends = ["authz:up"]
+run = "go run ./platform/authz/cmd/authz"
+
+[tasks."authz:check"]
+description = "authz サービスの判定・一覧・冪等性・作成直後可視を実 OpenFGA で検証（check #7）"
+depends = ["authz:up"]
+run = "dev/scripts/authz-check.sh"
+
 [tasks."keycloak:up"]
 description = "Keycloak を起動し realm を import する。CI では起動済みとみなす"
 run = '[ -n "${CI:-}" ] || docker compose up -d --wait keycloak'
