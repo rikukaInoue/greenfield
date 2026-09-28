@@ -183,6 +183,21 @@ func Run(ctx context.Context, cfg Config) error {
 // RunWith は組み立て済みの差し込み口でサーバを起動する。
 func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 	apis := APIs(deps)
+	// 起動ログ。**これが無いと「何が何番で待ち受けているか」が記録に残らない**（#142 の実測1:
+	// 稼働中のコンテナのログはサードパーティのものだけだった）。
+	// 登録ルートは Debug に置く。常時出すと起動ごとに数十行増え、canonical log line の方針と
+	// 釣り合わない。LOG_LEVEL=debug で見られる（Routes() はこの用途のために元からある）。
+	for _, l := range httpapi.Listeners {
+		api, ok := apis[l]
+		if !ok {
+			continue
+		}
+		slog.Info("listener ready", "listener", string(l), "server.address", addrOf(cfg, l))
+		for _, rt := range api.Routes() {
+			slog.Debug("route", "listener", string(l), "http.request.method", rt.Method, "url.path", rt.Path)
+		}
+	}
+
 	servers := []*http.Server{
 		{Addr: cfg.ExternalAddr, Handler: apis[httpapi.External].Handler},
 		{Addr: cfg.InternalAddr, Handler: apis[httpapi.Internal].Handler},
@@ -251,4 +266,17 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// addrOf はリスナーの待ち受けアドレスを返す。起動ログ用。
+func addrOf(cfg Config, l httpapi.Listener) string {
+	switch l {
+	case httpapi.External:
+		return cfg.ExternalAddr
+	case httpapi.Admin:
+		return cfg.AdminAddr
+	case httpapi.Internal:
+		return cfg.InternalAddr
+	}
+	return ""
 }

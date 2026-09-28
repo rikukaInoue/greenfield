@@ -93,6 +93,11 @@ services:
     container_name: greenfield-photo
     environment:
       ENV: dev
+      # ログの詳細度は**外から回せなければ意味がない**。コードに LOG_LEVEL の口を作っただけでは
+      # compose がホストの環境変数を転送しないので届かない（#142 で実測）。
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      # 開発機で人間向けに読みたいときだけ text。既定は JSON（1形式に揃える）
+      LOG_FORMAT: ${LOG_FORMAT:-}
       PHOTO_EXTERNAL_ADDR: ":8080"
       PHOTO_INTERNAL_ADDR: ":8081"
       PHOTO_ADMIN_ADDR: ":8082"
@@ -133,6 +138,11 @@ services:
     container_name: greenfield-gear
     environment:
       ENV: dev
+      # ログの詳細度は**外から回せなければ意味がない**。コードに LOG_LEVEL の口を作っただけでは
+      # compose がホストの環境変数を転送しないので届かない（#142 で実測）。
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      # 開発機で人間向けに読みたいときだけ text。既定は JSON（1形式に揃える）
+      LOG_FORMAT: ${LOG_FORMAT:-}
       GEAR_EXTERNAL_ADDR: ":8090"
       GEAR_INTERNAL_ADDR: ":8091"
       GEAR_ADMIN_ADDR: ":8092"

@@ -17,11 +17,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rikukaInoue/greenfield/core/logger"
 	"github.com/rikukaInoue/greenfield/services/photo/app"
 	"github.com/rikukaInoue/greenfield/services/photo/migrations"
 )
 
 func main() {
+	// ロガーは**プロセスの入口で1回だけ**組む。ライブラリ側（app.LocalDeps）でやると、
+	// 1プロセスに複数サービスを載せる dev/allinone で後から呼ばれた方の service.name が
+	// 全ログに付く。既定ロガーを差し替えるのはプロセスを所有している側の責務。
+	//
+	// SetDefault しておけば基盤ミドルウェアの logger.FromContext が既定に落ちて
+	// 相関IDを載せられる（context を全経路に通す必要がない）。
+	slog.SetDefault(logger.FromEnv("photo", app.Version))
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
