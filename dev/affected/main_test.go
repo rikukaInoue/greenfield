@@ -45,24 +45,28 @@ func TestAffected(t *testing.T) {
 		changed  []string
 		wantGo   []string
 		frontend bool
+		keycloak bool
 		all      bool
 	}{
 		// #22: photo だけの変更で gear は走らない
-		{"photo のみ", []string{"services/photo/usecase/photo.go"}, []string{"./dev", "./services/photo"}, true, false},
-		{"gear のみ", []string{"services/gear/app/app.go"}, []string{"./dev", "./services/gear"}, false, false},
+		{"photo のみ", []string{"services/photo/usecase/photo.go"}, []string{"./dev", "./services/photo"}, true, false, false},
+		{"gear のみ", []string{"services/gear/app/app.go"}, []string{"./dev", "./services/gear"}, false, false, false},
 		// #23: core の変更は依存する全モジュールへ広がる
-		{"core", []string{"core/flags/flags.go"}, []string{"./core", "./dev", "./services/photo", "./services/gear"}, true, false},
+		{"core", []string{"core/flags/flags.go"}, []string{"./core", "./dev", "./services/photo", "./services/gear"}, true, false, false},
 		// #23: client の再生成は利用側（gear）へ広がる
-		{"photo-client の再生成", []string{"services/photo-client/client.gen.go"}, []string{"./services/photo-client", "./services/gear", "./dev"}, false, false},
-		{"frontend のみ", []string{"frontend/apps/web/app/root.tsx"}, []string{}, true, false},
-		{"API 契約", []string{"api/photo/external.openapi.json"}, []string{"./dev", "./services/photo"}, true, false},
-		{"ドキュメントのみ", []string{"docs/verification-log.md", "services/photo/migrations/README.md"}, []string{}, false, false},
-		{"変更なし", nil, []string{}, false, false},
+		{"photo-client の再生成", []string{"services/photo-client/client.gen.go"}, []string{"./services/photo-client", "./services/gear", "./dev"}, false, false, false},
+		{"frontend のみ", []string{"frontend/apps/web/app/root.tsx"}, []string{}, true, false, false},
+		{"API 契約", []string{"api/photo/external.openapi.json"}, []string{"./dev", "./services/photo"}, true, false, false},
+		{"ドキュメントのみ", []string{"docs/verification-log.md", "services/photo/migrations/README.md"}, []string{}, false, false, false},
+		{"変更なし", nil, []string{}, false, false, false},
 		// 検査ツールと設定は全部に効く
-		{"dev のツール", []string{"dev/scripts/schema-dump.sh"}, all, true, true},
-		{"mise.toml", []string{"mise.toml"}, all, true, true},
-		{"CI 定義", []string{".github/workflows/ci.yml"}, all, true, true},
-		{"未知のサービスの api/", []string{"api/unknown/external.openapi.json"}, all, true, true},
+		{"dev のツール", []string{"dev/scripts/schema-dump.sh"}, all, true, true, true},
+		{"mise.toml", []string{"mise.toml"}, all, true, true, true},
+		{"CI 定義", []string{".github/workflows/ci.yml"}, all, true, true, true},
+		{"未知のサービスの api/", []string{"api/unknown/external.openapi.json"}, all, true, true, true},
+		// realm-as-code: realm.json の差分は認証基盤の設定変更。keycloak だけを起こす
+		{"realm 定義", []string{"deploy/compose/keycloak/realm.json"}, []string{}, false, true, false},
+		{"keycloak の検証スクリプト", []string{"dev/scripts/keycloak-claims.sh"}, []string{}, false, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,6 +77,9 @@ func TestAffected(t *testing.T) {
 			}
 			if got.Frontend != tc.frontend {
 				t.Errorf("Frontend = %v, want %v", got.Frontend, tc.frontend)
+			}
+			if got.Keycloak != tc.keycloak {
+				t.Errorf("Keycloak = %v, want %v\nreasons: %v", got.Keycloak, tc.keycloak, got.Reasons)
 			}
 			if got.All != tc.all {
 				t.Errorf("All = %v, want %v", got.All, tc.all)

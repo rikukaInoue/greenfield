@@ -184,6 +184,19 @@ run = [
   'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]
 
+[tasks."keycloak:up"]
+description = "Keycloak を起動し realm を import する。CI では起動済みとみなす"
+run = '[ -n "${CI:-}" ] || docker compose up -d --wait keycloak'
+
+[tasks."keycloak:check"]
+description = "realm.json どおりのクレームが載るか検証（check #13）"
+depends = ["keycloak:up"]
+run = "dev/scripts/keycloak-claims.sh"
+
+[tasks."keycloak:export"]
+description = "動いている Keycloak の realm を realm.json へ書き戻す（Admin Console で変えたら必ず実行）"
+run = "dev/scripts/keycloak-export.sh"
+
 [tasks."flags:up"]
 description = "フィーチャーフラグ（flagd）を起動し、到達可能になるまで待つ。CI では file 読みなので不要"
 # flagd は distroless でシェルも curl も持たないためコンテナ内 healthcheck を書けない。
