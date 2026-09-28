@@ -12,7 +12,11 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
     ports:
-      - "3306:3306"
+      # ホスト側は 13306。3306 は Homebrew の MySQL や別プロジェクトに先取りされがちで、
+      # 公開が黙って負けると「ホストのツールだけ別の DB に繋がる」形になる
+      # （2026-09-29 の 3.3 検証で実際に踏んだ。verification-log 参照）。
+      # 127.0.0.1 バインドで LAN への露出も避ける。コンテナ間は mysql:3306 のままで無関係。
+      - "127.0.0.1:13306:3306"
     volumes:
       # database・ユーザー・GRANT の作成はDBレベルの操作としてここ（platform運用相当）が持つ。
       # サービスのマイグレーションには入れない（conventions/internal-05）。
@@ -34,7 +38,7 @@ services:
       RUSTFS_SECRET_KEY: testtest
       RUSTFS_CONSOLE_ENABLE: "false"
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
       - rustfs-data:/data
     healthcheck:
@@ -55,7 +59,7 @@ services:
       SERVICES: sns,sqs
       DEBUG: "0"
     ports:
-      - "4566:4566"
+      - "127.0.0.1:4566:4566"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
       interval: 3s
@@ -70,7 +74,7 @@ services:
     ports:
       # 8015 は flag sync service。アプリは定義をここから同期してプロセス内で評価する（docs/adr/0013）。
       # 8013（リモート評価）は使わない。SSR はフラグを評価しない（docs/adr/0014）
-      - "8015:8015"
+      - "127.0.0.1:8015:8015"
     volumes:
       - ./flagd:/etc/flagd:ro
     # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。
@@ -89,7 +93,7 @@ services:
     ports:
       # 8180 は issuer と一致させる（docs/02-architecture.md）。Tier 1 では Go アプリを
       # ホストプロセスで動かすので、ブラウザ・アプリ双方から同じ名前で解決する
-      - "8180:8080"
+      - "127.0.0.1:8180:8080"
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     healthcheck:
@@ -124,7 +128,7 @@ services:
       OPENFGA_PLAYGROUND_ENABLED: "false"
     ports:
       # 8280 = HTTP API。8080 はこのマシンで別用途に使われがちなので避ける
-      - "8280:8080"
+      - "127.0.0.1:8280:8080"
     depends_on:
       openfga-migrate:
         condition: service_completed_successfully
@@ -166,9 +170,9 @@ services:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: testtest
     ports:
-      - "18080:8080"
-      - "18081:8081"
-      - "18082:8082"
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18081:8081"
+      - "127.0.0.1:18082:8082"
     depends_on:
       mysql:
         condition: service_healthy
@@ -204,9 +208,9 @@ services:
       # gear はまだ自 database を使わない(Config に DSN が無い)。持ったら photo と同じ形で足す
       LOCALAUTHZ_DSN: "localauthz:localauthz@tcp(mysql:3306)/localauthz"
     ports:
-      - "18090:8090"
-      - "18091:8091"
-      - "18092:8092"
+      - "127.0.0.1:18090:8090"
+      - "127.0.0.1:18091:8091"
+      - "127.0.0.1:18092:8092"
     depends_on:
       mysql:
         condition: service_healthy

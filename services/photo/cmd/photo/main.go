@@ -57,7 +57,7 @@ func runMigrate(ctx context.Context, args []string) error {
 	}
 	dsn := os.Getenv("PHOTO_MIGRATE_DSN")
 	if dsn == "" {
-		dsn = "photo_migrate:photo_migrate@tcp(127.0.0.1:3306)/photo"
+		dsn = "photo_migrate:photo_migrate@tcp(127.0.0.1:13306)/photo"
 	}
 	switch args[0] {
 	case "expand":

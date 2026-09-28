@@ -34,7 +34,7 @@ want=("$@")
 
 container=${MYSQL_CONTAINER-greenfield-mysql}
 host=${MYSQL_HOST:-127.0.0.1}
-port=${MYSQL_PORT:-3306}
+port=${MYSQL_PORT:-13306}
 
 if [ -n "$container" ]; then
   mysql_root() { docker exec -i "$container" mysql -uroot -proot "$@" 2> >(grep -v "Using a password" >&2); }

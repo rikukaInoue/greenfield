@@ -52,7 +52,7 @@ func runMigrate(ctx context.Context, args []string) error {
 	}
 	dsn := os.Getenv("GEAR_MIGRATE_DSN")
 	if dsn == "" {
-		dsn = "gear_migrate:gear_migrate@tcp(127.0.0.1:3306)/gear"
+		dsn = "gear_migrate:gear_migrate@tcp(127.0.0.1:13306)/gear"
 	}
 	switch args[0] {
 	case "expand":
