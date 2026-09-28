@@ -12,7 +12,7 @@ func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("{{.Env}}_MIGRATE_DSN")
 	if dsn == "" {
-		dsn = "{{.Name}}_migrate:{{.Name}}_migrate@tcp(127.0.0.1:3306)/{{.Name}}"
+		dsn = "{{.Name}}_migrate:{{.Name}}_migrate@tcp(127.0.0.1:13306)/{{.Name}}"
 	}
 	db, _, err := openDB(dsn)
 	if err != nil {
