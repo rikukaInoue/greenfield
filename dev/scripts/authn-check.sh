@@ -4,7 +4,7 @@
 #
 #   mise run authn:check
 #
-# 前提: keycloak(8180) / openfga(8280) / mysql(3306) が起動済みで、
+# 前提: keycloak(8180) / openfga(8280) / mysql(13306) が起動済みで、
 #       photo が OIDC_ISSUER 付き（=OIDCDeps）で、authz が OIDC_ISSUER 付きで動いていること。
 #       mise run authn:check はこの起動まで面倒を見る。
 #

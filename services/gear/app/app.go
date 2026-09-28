@@ -60,7 +60,7 @@ func ConfigFromEnv() Config {
 		ExternalAddr:  envOr("GEAR_EXTERNAL_ADDR", ":8090"),
 		InternalAddr:  envOr("GEAR_INTERNAL_ADDR", ":8091"),
 		AdminAddr:     envOr("GEAR_ADMIN_ADDR", ":8092"),
-		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
+		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"),
 	}
 }
 

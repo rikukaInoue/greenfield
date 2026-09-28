@@ -19,7 +19,7 @@ func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("PHOTO_MIGRATE_DSN")
 	if dsn == "" {
-		dsn = "photo_migrate:photo_migrate@tcp(127.0.0.1:3306)/photo"
+		dsn = "photo_migrate:photo_migrate@tcp(127.0.0.1:13306)/photo"
 	}
 	db, _, err := openDB(dsn)
 	if err != nil {

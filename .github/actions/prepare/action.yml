@@ -47,7 +47,7 @@ runs:
       shell: bash
       run: |
         for i in $(seq 1 60); do
-          mysqladmin ping -h 127.0.0.1 -uroot -proot --silent 2>/dev/null && exit 0
+          mysqladmin ping -h 127.0.0.1 -P 13306 -uroot -proot --silent 2>/dev/null && exit 0
           sleep 2
         done
         echo "MySQL が起動しない" >&2
@@ -60,5 +60,5 @@ runs:
       shell: bash
       run: |
         for f in deploy/compose/mysql/init/*.sql; do
-          mysql -h 127.0.0.1 -uroot -proot < "$f"
+          mysql -h 127.0.0.1 -P 13306 -uroot -proot < "$f"
         done

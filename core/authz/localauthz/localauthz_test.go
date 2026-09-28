@@ -24,7 +24,7 @@ func store(t *testing.T) (*localauthz.Store, *sql.DB) {
 	t.Helper()
 	dsn := os.Getenv("LOCALAUTHZ_DSN")
 	if dsn == "" {
-		dsn = "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"
+		dsn = "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"
 	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {

@@ -33,7 +33,7 @@ type result struct {
 
 func main() {
 	var (
-		dsn        = flag.String("dsn", envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:3306)/photo"), "接続先")
+		dsn        = flag.String("dsn", envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:13306)/photo"), "接続先")
 		table      = flag.String("table", "photos", "対象テーブル")
 		oldCol     = flag.String("old", "", "旧カラム")
 		newCol     = flag.String("new", "", "新カラム")

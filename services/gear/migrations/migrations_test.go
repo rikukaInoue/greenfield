@@ -12,7 +12,7 @@ func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("GEAR_MIGRATE_DSN")
 	if dsn == "" {
-		dsn = "gear_migrate:gear_migrate@tcp(127.0.0.1:3306)/gear"
+		dsn = "gear_migrate:gear_migrate@tcp(127.0.0.1:13306)/gear"
 	}
 	db, _, err := openDB(dsn)
 	if err != nil {
