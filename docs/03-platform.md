@@ -10,7 +10,7 @@
 
 **realm-as-code**。realm定義JSON（clients・ロール・claim mapper・TOTP設定）を `deploy/compose/keycloak/realm.json` としてgit管理し、`start-dev --import-realm` で毎回同一状態を再現する。CIでも同じコンテナが立つ。手動でのAdmin Console変更はexportして必ずJSONへ戻す。
 
-登録するクライアントは3種: `ssr`（confidential、Authorization Code + PKCE）、`agent`（public、PKCE。任意フェーズ用）、`svc-photo` / `svc-gear` 等（service accounts有効 = client_credentials、scope `internal:*`）。カスタムクレームはprotocol mapper（claim mapper）で注入する（`auth_time` は標準クレーム、amr・org等はmapper）。M2Mトークンのキャッシュ（期限まで再利用）はクォータ理由がなくても `core/httpclient` の規約として維持する。
+登録するクライアントは3種: `ssr`（confidential、Authorization Code + PKCE）、`agent`（public、PKCE。任意フェーズ用）、`svc-photo` / `svc-gear` 等（service accounts有効 = client_credentials、scope `internal:*`）。カスタムクレームはprotocol mapper（claim mapper）で注入する（`auth_time` は標準クレーム、amr・org等はmapper）。M2Mトークンのキャッシュ（期限まで再利用）はクォータ理由がなくても `core/httpclient` の規約として維持する（同パッケージは未実装。#138）。
 
 ステップアップは当面対象外とし、コード側は `RequireAAL` の呼び出し語彙だけを固定して簡易AssuranceCheckerで進める。後日実施する場合、KeycloakはACR↔LoAマッピングとStep-up Authenticationを標準機能として持つため、realm設定の追加のみで任意課題（#12）に着手できる——SaaSに対するもう1つの優位点である。
 
@@ -41,4 +41,4 @@ type photo
 
 ## サービス間認証
 
-KeycloakのM2M（client_credentials、service accounts）JWT + scope。`core/httpclient` がトークン取得・キャッシュ・自動付与・`Idempotency-Key`・トレースID伝播を担う。プライベートネットワークを理由とした無認証は試作でも採らない（構造をプロダクションと揃える）。
+KeycloakのM2M（client_credentials、service accounts）JWT + scope。`core/httpclient` がトークン取得・キャッシュ・自動付与・`Idempotency-Key`・トレースID伝播を担う（**未実装。3.3で導入し冪等キーは4.1以降。#138**）。プライベートネットワークを理由とした無認証は試作でも採らない（構造をプロダクションと揃える）。

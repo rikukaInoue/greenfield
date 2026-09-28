@@ -61,7 +61,7 @@
 
 | # | ステージ | 内容 | 確かめること | サイズ |
 |---|---|---|---|---|
-| 4.1 | サービス間 | gearを実装、client module、M2M+scope、境界での型変換 | 生成→配布→interface受けの一連 | M |
+| 4.1 | サービス間 | gearを実装、client module、M2M+scope、境界での型変換、`core/httpclient` の冪等キー付与（#138） | 生成→配布→interface受けの一連 | M |
 | 4.2 | Eventual | outbox+relay+SNS/SQS(LocalStack)+inbox | #8 relay停止→回復、#9 重複無害化 | L |
 | 4.3 | ReplicaView | イベント購読→表示用複製、outbox再生 | #10 再構築一致 | M |
 | 4.4 | 同期コマンド | pending状態+冪等キー+回収ジョブ | #11 相手停止→pending→回収で確定 | L |
