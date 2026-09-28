@@ -21,13 +21,14 @@ func fixture(t *testing.T) *repo {
 			t.Fatal(err)
 		}
 	}
-	write("go.work", "go 1.26.0\n\nuse (\n\t./core\n\t./dev\n\t./services/photo\n\t./services/photo-client\n\t./services/gear\n\t./services/gear-client\n)\n")
+	write("go.work", "go 1.26.0\n\nuse (\n\t./core\n\t./dev\n\t./services/photo\n\t./services/photo-client\n\t./services/gear\n\t./services/gear-client\n\t./platform/authz\n)\n")
 	write("core/go.mod", "module example.com/core\n")
 	write("services/photo-client/go.mod", "module example.com/services/photo-client\n")
 	write("services/gear-client/go.mod", "module example.com/services/gear-client\n")
 	write("services/photo/go.mod", "module example.com/services/photo\n\nreplace example.com/core => ../../core\n")
 	write("services/gear/go.mod", "module example.com/services/gear\n\nreplace example.com/core => ../../core\n\nreplace example.com/services/photo-client => ../photo-client\n")
 	write("dev/go.mod", "module example.com/dev\n\nreplace example.com/core => ../core\n\nreplace example.com/services/photo => ../services/photo\n\nreplace example.com/services/gear => ../services/gear\n")
+	write("platform/authz/go.mod", "module example.com/platform/authz\n\nreplace example.com/core => ../../core\n")
 	write("frontend/packages/photo-api/package.json", "{}")
 	r, err := loadRepo(root)
 	if err != nil {
@@ -38,7 +39,7 @@ func fixture(t *testing.T) *repo {
 
 func TestAffected(t *testing.T) {
 	r := fixture(t)
-	all := []string{"./core", "./dev", "./services/photo", "./services/photo-client", "./services/gear", "./services/gear-client"}
+	all := []string{"./core", "./dev", "./services/photo", "./services/photo-client", "./services/gear", "./services/gear-client", "./platform/authz"}
 
 	cases := []struct {
 		name     string
@@ -52,7 +53,7 @@ func TestAffected(t *testing.T) {
 		{"photo のみ", []string{"services/photo/usecase/photo.go"}, []string{"./dev", "./services/photo"}, true, false, false},
 		{"gear のみ", []string{"services/gear/app/app.go"}, []string{"./dev", "./services/gear"}, false, false, false},
 		// #23: core の変更は依存する全モジュールへ広がる
-		{"core", []string{"core/flags/flags.go"}, []string{"./core", "./dev", "./services/photo", "./services/gear"}, true, false, false},
+		{"core", []string{"core/flags/flags.go"}, []string{"./core", "./dev", "./services/photo", "./services/gear", "./platform/authz"}, true, false, false},
 		// #23: client の再生成は利用側（gear）へ広がる
 		{"photo-client の再生成", []string{"services/photo-client/client.gen.go"}, []string{"./services/photo-client", "./services/gear", "./dev"}, false, false, false},
 		{"frontend のみ", []string{"frontend/apps/web/app/root.tsx"}, []string{}, true, false, false},
@@ -67,6 +68,9 @@ func TestAffected(t *testing.T) {
 		// realm-as-code: realm.json の差分は認証基盤の設定変更。keycloak だけを起こす
 		{"realm 定義", []string{"deploy/compose/keycloak/realm.json"}, []string{}, false, true, false},
 		{"keycloak の検証スクリプト", []string{"dev/scripts/keycloak-claims.sh"}, []string{}, false, true, false},
+		// authz の検証スクリプトは platform/authz だけを起こす（全モジュールへ広げない）
+		{"authz の検証スクリプト", []string{"dev/scripts/authz-check.sh"}, []string{"./platform/authz"}, false, false, false},
+		{"platform/authz のコード", []string{"platform/authz/service.go"}, []string{"./platform/authz"}, false, false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -36,5 +36,11 @@ CREATE USER IF NOT EXISTS 'gear_migrate'@'%' IDENTIFIED BY 'gear_migrate';
 GRANT SELECT, INSERT, UPDATE, DELETE ON gear.* TO 'gear_app'@'%';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LOCK TABLES ON gear.* TO 'gear_migrate'@'%';
 
+-- OpenFGA（authzサービスの裏のタプルストア。Phase 3.2）。
+-- サービスの database とは分離し、GRANT も openfga ユーザーに閉じる。
+CREATE DATABASE IF NOT EXISTS openfga CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER IF NOT EXISTS 'openfga'@'%' IDENTIFIED BY 'openfga';
+GRANT ALL PRIVILEGES ON openfga.* TO 'openfga'@'%';
+
 -- scaffold:databases
 FLUSH PRIVILEGES;

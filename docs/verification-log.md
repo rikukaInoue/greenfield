@@ -48,3 +48,4 @@
 | 2026-09-27 | [ステージ 2.3 デプロイ順序（#46 / check #24）](verification-log/2026-09-27-stage-23.md) |
 | 2026-09-27 | [ステージ 2.4 並列と直列（#47 / check #26）](verification-log/2026-09-27-stage-24.md) |
 | 2026-09-28 | [ステージ 3.1 Keycloak（#48） / チェック #13（#13）](verification-log/2026-09-28-stage-31.md) |
+| 2026-09-28 | [ステージ 3.2 authzサービス（#49） / チェック #7 本番版（#7）](verification-log/2026-09-28-stage-32.md) |

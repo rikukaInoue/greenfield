@@ -192,6 +192,15 @@ func (r *repo) affected(changed []string) Result {
 			// dev/ 配下だが全モジュールへ広げず、keycloak ジョブだけを起こす
 			keycloak = append(keycloak, f)
 			continue
+		case strings.HasPrefix(f, "dev/scripts/authz-"):
+			// authz サービス（platform/authz）専用の検証スクリプト。dev/ 配下だが
+			// dev モジュールのビルドには関係しないので、全体へ広げず authz モジュールへ振る
+			if r.has("./platform/authz") {
+				direct["./platform/authz"] = append(direct["./platform/authz"], f)
+			} else {
+				global = append(global, f)
+			}
+			continue
 		case strings.HasPrefix(f, "api/"):
 			svc := strings.SplitN(strings.TrimPrefix(f, "api/"), "/", 2)[0]
 			m := "./services/" + svc
