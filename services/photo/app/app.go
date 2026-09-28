@@ -15,12 +15,15 @@ import (
 	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
 
 	"github.com/rikukaInoue/greenfield/core/authz"
+	"github.com/rikukaInoue/greenfield/core/authz/authzhttp"
 	"github.com/rikukaInoue/greenfield/core/authz/localauthz"
+	"github.com/rikukaInoue/greenfield/core/authz/oidcauthn"
 	"github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
 	"github.com/rikukaInoue/greenfield/core/authz/staticauthn"
 	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/flags"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	"github.com/rikukaInoue/greenfield/core/httpclient"
 	"github.com/rikukaInoue/greenfield/core/runtimeenv"
 	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/flagsource"
@@ -70,6 +73,22 @@ type Config struct {
 	Images blobstore.Config
 	// Flags はフィーチャーフラグの取得元。評価はプロセス内で行う（docs/adr/0013）。
 	Flags flagsource.Config
+	// OIDCIssuer が設定されていれば本番アダプタ（oidcauthn + authzhttp）で組む。
+	// 空なら LocalDeps（staticauthn + localauthz。開発用の許可リスト環境のみ）。
+	OIDCIssuer string
+	// AuthzURL は platform/authz のベースURL。
+	AuthzURL string
+	// M2M は authz サービスを呼ぶための client_credentials。
+	M2M M2MConfig
+}
+
+// M2MConfig はサービス間認証のクライアント資格情報。
+type M2MConfig struct {
+	TokenURL     string
+	ClientID     string
+	ClientSecret string
+	// Scopes は要求するスコープ。authz を呼ぶには internal:platform が要る
+	Scopes []string
 }
 
 // ConfigFromEnv は環境変数から設定を読む。
@@ -82,6 +101,14 @@ func ConfigFromEnv() Config {
 		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:3306)/localauthz"),
 		Flags:         flagsource.ConfigFromEnv(),
 		Images:        imageConfigFromEnv(),
+		OIDCIssuer:    os.Getenv("OIDC_ISSUER"),
+		AuthzURL:      envOr("AUTHZ_URL", "http://localhost:8100"),
+		M2M: M2MConfig{
+			TokenURL:     os.Getenv("M2M_TOKEN_URL"),
+			ClientID:     envOr("M2M_CLIENT_ID", "svc-photo"),
+			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
+			Scopes:       []string{"internal:platform"},
+		},
 	}
 }
 
@@ -140,6 +167,42 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	}, nil
 }
 
+// OIDCDeps は本番アダプタ（oidcauthn + authzhttp）で組み立てる。
+// LocalDeps との違いは認証と認可の2依存だけで、usecase / handler には触れない
+// （差し替えの影響が配線部に閉じることが internal-04 §7 の主張。check #18）。
+func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
+	authn, err := oidcauthn.New(ctx, cfg.OIDCIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("oidcauthn: %w", err)
+	}
+	if cfg.M2M.TokenURL == "" || cfg.M2M.ClientSecret == "" {
+		return nil, fmt.Errorf("authz を呼ぶ M2M 資格情報が未設定（M2M_TOKEN_URL / M2M_CLIENT_SECRET）")
+	}
+	ts := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, cfg.M2M.Scopes...)
+	store := authzhttp.New(cfg.AuthzURL, httpclient.Client(ts))
+
+	db, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("photo db: %w", err)
+	}
+	images, err := blobstore.NewS3Store(ctx, cfg.Images)
+	if err != nil {
+		return nil, err
+	}
+	if err := flagsource.Register(ctx, "photo", cfg.Flags); err != nil {
+		slog.Warn("フラグ基盤に接続できないので既定値で動く", "config", cfg.Flags, "err", err)
+	}
+	return &Deps{
+		Authenticator: authn,
+		Assurance:     simpleassurance.New(),
+		Flags:         flags.NewEvaluator("photo", flagSet),
+		Commands: usecase.NewPhotoCommands(
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, usecase.EnvFaults{}),
+		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
+		closers: []func() error{db.Close},
+	}, nil
+}
+
 // APIs はリスナー3系統の huma API を組み立てる。スペック生成とサーバ起動で共有する。
 // deps が nil なら認証ミドルウェアを付けない（スペック生成専用）。
 func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
@@ -172,7 +235,13 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 
 // Run は3リスナーを起動し、ctxのキャンセルまたはいずれかのリスナーの失敗で全て停止する。
 func Run(ctx context.Context, cfg Config) error {
-	deps, err := LocalDeps(ctx, cfg)
+	// OIDC_ISSUER の有無で配線を選ぶ。LocalDeps 側は staticauthn / localauthz が
+	// それぞれ runtimeenv の許可リストで守られているので、本番で誤って選べば起動で落ちる
+	build := LocalDeps
+	if cfg.OIDCIssuer != "" {
+		build = OIDCDeps
+	}
+	deps, err := build(ctx, cfg)
 	if err != nil {
 		return err
 	}

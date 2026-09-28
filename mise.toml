@@ -202,6 +202,10 @@ description = "authz サービスの判定・一覧・冪等性・作成直後�
 depends = ["authz:up"]
 run = "dev/scripts/authz-check.sh"
 
+[tasks."authn:check"]
+description = "本番アダプタ（oidcauthn+authzhttp）へ差し替えた photo を実 Keycloak のトークンで一気通貫検証（#27）"
+run = "dev/scripts/authn-check.sh"
+
 [tasks."keycloak:up"]
 description = "Keycloak を起動し realm を import する。CI では起動済みとみなす"
 run = '[ -n "${CI:-}" ] || docker compose up -d --wait keycloak'
