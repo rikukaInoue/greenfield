@@ -1,0 +1,46 @@
+name: API docs
+
+# api/ は唯一の契約置き場（生成物）。人が読める HTML はそこから作った派生物なので、
+# main が動いたときだけ作り直して Pages へ置く。PR では生成しない（api:check が契約の
+# 一致を検査しており、HTML はレビュー対象ではない）。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "dev/scripts/api-docs.sh"
+      - ".github/workflows/api-docs.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: api-docs
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          install_args: node pnpm
+          cache: true
+
+      - name: HTML を生成する
+        run: dev/scripts/api-docs.sh
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: api-docs
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

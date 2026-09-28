@@ -99,6 +99,10 @@ run = 'for s in $(mise run services); do dev/scripts/schema-dump.sh $(basename $
 description = "huma の型から api/<service>/<listener>.openapi.json を生成（api/ は手書きしない）"
 run = "go run ./dev/genapi"
 
+[tasks."api:docs"]
+description = "api/ の OpenAPI JSON から人が読める HTML を生成（api-docs/。#77）"
+run = "dev/scripts/api-docs.sh"
+
 [tasks."api:check"]
 description = "api/ の生成物がコードと一致しているか検証（CI）"
 run = "go run ./dev/genapi -check"
