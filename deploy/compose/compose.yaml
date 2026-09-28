@@ -76,6 +76,30 @@ services:
     # イメージは distroless でシェルも curl も持たないため、コンテナ内の healthcheck は書けない。
     # 到達性は依存する側（アプリ）が既定値へ倒れる形で吸収する。
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: greenfield-keycloak
+    # realm-as-code: realm.json を毎回 import して同一状態を再現する（docs/03-platform.md）。
+    # Admin Console で手で変えたら export して realm.json へ必ず戻すこと。
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+    ports:
+      # 8180 は issuer と一致させる（docs/02-architecture.md）。Tier 1 では Go アプリを
+      # ホストプロセスで動かすので、ブラウザ・アプリ双方から同じ名前で解決する
+      - "8180:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # 26 系は管理用ポート 9000 に health エンドポイントがある。イメージに curl は無いが
+      # bash と /dev/tcp は使えるので、それで待つ
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/greenfield HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
   # --- デプロイ先（ステージ 2.3 / #46）------------------------------------
   # 手元マシンの compose がデプロイ先。ECS は Phase 7 で、そのときは
   # このサービス定義がタスク定義に置き換わる（デプロイ順序の形は変えない）。

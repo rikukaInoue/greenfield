@@ -26,6 +26,7 @@ type Result struct {
 	All      bool     `json:"all"`
 	Go       []string `json:"go"`
 	Frontend bool     `json:"frontend"`
+	Keycloak bool     `json:"keycloak"`
 	Reasons  []string `json:"reasons"`
 }
 
@@ -74,7 +75,7 @@ func run(base string, all bool, output string) error {
 	for _, reason := range res.Reasons {
 		fmt.Fprintln(os.Stderr, reason)
 	}
-	fmt.Fprintf(os.Stderr, "対象: Go %d / %d モジュール, frontend=%t\n", len(res.Go), len(r.modules), res.Frontend)
+	fmt.Fprintf(os.Stderr, "対象: Go %d / %d モジュール, frontend=%t, keycloak=%t\n", len(res.Go), len(r.modules), res.Frontend, res.Keycloak)
 
 	b, err := json.Marshal(res)
 	if err != nil {
@@ -93,7 +94,7 @@ func run(base string, all bool, output string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "go=%s\nfrontend=%t\nall=%t\n", goJSON, res.Frontend, res.All)
+	_, err = fmt.Fprintf(f, "go=%s\nfrontend=%t\nkeycloak=%t\nall=%t\n", goJSON, res.Frontend, res.Keycloak, res.All)
 	return err
 }
 
@@ -176,6 +177,7 @@ func loadRepo(root string) (*repo, error) {
 func (r *repo) affected(changed []string) Result {
 	direct := map[string][]string{} // モジュール → 理由
 	frontend := []string{}
+	keycloak := []string{}
 	var global []string
 	for _, f := range changed {
 		switch {
@@ -183,6 +185,12 @@ func (r *repo) affected(changed []string) Result {
 			continue
 		case strings.HasPrefix(f, "frontend/"):
 			frontend = append(frontend, f)
+			continue
+		case strings.HasPrefix(f, "deploy/compose/keycloak/"),
+			strings.HasPrefix(f, "dev/scripts/keycloak-"):
+			// realm-as-code なので realm.json の差分は認証基盤の設定変更そのもの。
+			// dev/ 配下だが全モジュールへ広げず、keycloak ジョブだけを起こす
+			keycloak = append(keycloak, f)
 			continue
 		case strings.HasPrefix(f, "api/"):
 			svc := strings.SplitN(strings.TrimPrefix(f, "api/"), "/", 2)[0]
@@ -225,6 +233,10 @@ func (r *repo) affected(changed []string) Result {
 			res.Go = append(res.Go, m)
 		}
 	}
+	if len(keycloak) > 0 {
+		res.Keycloak = true
+		res.Reasons = append(res.Reasons, fmt.Sprintf("keycloak: 変更 %s", strings.Join(limit(keycloak, 3), ", ")))
+	}
 	if len(frontend) > 0 {
 		res.Frontend = true
 		res.Reasons = append(res.Reasons, fmt.Sprintf("frontend: 変更 %s", strings.Join(limit(frontend, 3), ", ")))
@@ -246,7 +258,7 @@ func (r *repo) affected(changed []string) Result {
 }
 
 func (r *repo) everything(reason string) Result {
-	return Result{All: true, Go: append([]string{}, r.modules...), Frontend: true, Reasons: []string{reason}}
+	return Result{All: true, Go: append([]string{}, r.modules...), Frontend: true, Keycloak: true, Reasons: []string{reason}}
 }
 
 func (r *repo) has(m string) bool {

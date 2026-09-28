@@ -35,6 +35,7 @@ jobs:
     outputs:
       go: ${{ steps.affected.outputs.go }}
       frontend: ${{ steps.affected.outputs.frontend }}
+      keycloak: ${{ steps.affected.outputs.keycloak }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -169,6 +170,36 @@ jobs:
           API_BASE_REF: origin/${{ github.base_ref }}
         run: mise run --quiet api:breaking
 
+  keycloak:
+    needs: changes
+    if: needs.changes.outputs.keycloak == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # services: では command を渡せず --import-realm で起動できない（flagd と同じ制約。
+      # 冒頭の env コメント参照）ため、docker run で compose と同じ形に立てる
+      - name: Keycloak を起動する
+        run: |
+          docker run -d --name keycloak -p 8180:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/compose/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+
+      - name: realm の起動を待つ
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:8180/realms/greenfield && exit 0
+            sleep 3
+          done
+          echo "Keycloak が起動しない" >&2
+          docker logs keycloak | tail -50
+          exit 1
+
+      - name: realm.json どおりのクレームが載るか（check #13）
+        run: dev/scripts/keycloak-claims.sh
+
+
   frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -252,7 +283,7 @@ jobs:
   # ブランチ保護の必須チェックはこのジョブだけを指定すればよい（対象外のジョブがスキップでも通る）。
   check:
     if: always()
-    needs: [changes, go, cross-db-fk, api-breaking, frontend]
+    needs: [changes, go, cross-db-fk, api-breaking, frontend, keycloak]
     runs-on: ubuntu-latest
     steps:
       - name: 結果をまとめる
