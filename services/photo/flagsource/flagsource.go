@@ -17,6 +17,25 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 )
 
+// flagd のログはアプリの slog に寄せられない（flagd v0.7.0、#142 で実測）。
+//
+// `flagd.WithLogger(logr.Logger)` は**rpc リゾルバにしか渡らない**。我々が使う
+// in-process リゾルバ（ADR 0013: 定義を同期してプロセス内で評価する）は
+// `NewInProcessService` が無条件に自前の zap ロガーを作り、`process.Configuration` に
+// 渡す口が無い。
+//
+//	provider.go:69     rpc      -> providerConfiguration.log を渡している
+//	provider.go:72-92  inProcess-> Configuration に log フィールドが無い
+//	in_process/service.go:145   -> log := logger.NewLogger(NewRaw(), false)
+//	in_process/zap.go:41        -> sink は os.Stderr 固定、レベルは Info 固定
+//
+// 結果として flagd は `{"level":"info","ts":...}`（zap の既定フィールド名）を **stderr** へ、
+// アプリは `{"time":"...Z","level":"INFO",...}`（service.name 付き）を **stdout** へ出す。
+// **1形式に揃えるという方針の唯一の例外**であり、上流が in-process 側にロガーを通すまで直せない。
+//
+// `WithLogger` を渡す配線は**あえて入れていない**。我々の経路では no-op で、
+// 「書いてあるが効いていない」コードを増やすだけになるため。
+
 // Kind は定義の取得元。
 type Kind string
 

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rikukaInoue/greenfield/core/authz"
+	"github.com/rikukaInoue/greenfield/core/middleware"
 	"github.com/rikukaInoue/greenfield/core/problem"
 )
 
@@ -89,11 +90,29 @@ type Options struct {
 	Middlewares []func(http.Handler) http.Handler
 }
 
+// 基盤スタック（相関ID / アクセスログ / パニック復帰）は Options で選ばせず**必ず入れる**。
+//
+// 選択可能にすると「アクセスログの無いリスナー」が作れてしまう。認証より外側でなければ
+// ならない（401 で落ちたリクエストも記録し、認証自身のパニックも拾う）ので、
+// Options.Middlewares（認証の後に適用される）では位置が足りない。
+//
+// これを入れる前は、リスナーは**1リクエストも記録していなかった**（#142 の実測1）。
+func baseMiddlewares() []func(http.Handler) http.Handler {
+	return middleware.Base(func(w http.ResponseWriter, r *http.Request) {
+		problem.Write(w, r, problem.New(http.StatusInternalServerError, problem.CodeInternal,
+			"内部エラーが発生しました"))
+	})
+}
+
 // New はリスナー1つ分の API を作る。ルートの登録は呼び出し側が huma.Register で行う。
 func New(l Listener, o Options) API {
 	problem.Install() // huma が生成するエラーにも code を載せる。Register より前に呼ぶ
 
 	r := chi.NewMux()
+	// 基盤スタックは認証より外。順序の理由は baseMiddlewares と middleware.Base を参照。
+	for _, m := range baseMiddlewares() {
+		r.Use(m)
+	}
 	if o.Authenticator != nil {
 		r.Use(o.Authenticator.Middleware())
 	}

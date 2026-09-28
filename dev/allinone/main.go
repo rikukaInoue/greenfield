@@ -10,9 +10,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/rikukaInoue/greenfield/core/logger"
 )
 
 func main() {
+	// 1プロセスに複数サービスが載るので、service.name は "allinone" にする。
+	// どのサービスのリスナーが処理したかはアクセスログの listener と server.address で分かる。
+	slog.SetDefault(logger.FromEnv("allinone", ""))
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
