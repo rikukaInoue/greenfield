@@ -39,3 +39,4 @@
 | [0016](0016-development-guard-is-an-allow-list.md) | 開発用の実装は許可リストで守る（未設定は本番とみなす） | 要 |
 | [0017](0017-api-versioning.md) | API のバージョニング（並行提供はアダプタで行い、ファイル名とメジャーを結ぶ） | 要 |
 | [0018](0018-keep-localstack-for-sns-sqs.md) | イベント基盤のローカルは LocalStack を使い続ける | 要 |
+| [0019](0019-httpapi-in-core.md) | huma + chi は `core/httpapi` に閉じて core に置く | 要 |

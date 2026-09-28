@@ -12,11 +12,15 @@
 ├── go.work                        # リポジトリ内のモジュールを束ねる。タグ付け不要
 ├── core/                          # 横断的関心事のみ。軽依存に保つ
 │   ├── go.mod
-│   ├── authz/                     # 認証・認可の差し込み口（§6）
+│   ├── authz/                     # 認証・認可の差し込み口（§6）。localauthz / staticauthn 等のローカル実装を含む
 │   ├── consistency/               # Atomic / Eventual の共通実装（§2.2〜2.3）
-│   ├── middleware/
-│   ├── httpclient/                # サービス間HTTP基盤（トークン付与・伝播）※未実装（下記）
-│   └── logger/
+│   ├── flags/                     # フィーチャーフラグの評価とミドルウェア（internal-08。OpenFeature SDKのみに依存）
+│   ├── httpapi/                   # リスナーごとの huma API の組み立て（ADR 0019。huma + chi はここに閉じる）
+│   ├── logger/                    # slog ハンドラの組み立て入口（internal-06 §10.1。stdlib のみ）
+│   ├── middleware/                # 相関ID・アクセスログ・パニック復帰（net/http のみ。ルータ非依存）
+│   ├── problem/                   # RFC 9457 エラー応答（機械可読 code 付き）
+│   ├── runtimeenv/                # ENV の解釈（ADR 0016。開発用実装の許可判定）
+│   └── httpclient/                # サービス間HTTP基盤（トークン付与・伝播）※未実装（下記）
 ├── api/                           # 生成されたOpenAPI（唯一の共有契約置き場、手書き禁止）
 │   └── order/{external,admin,internal}.openapi.json
 ├── services/
