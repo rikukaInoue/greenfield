@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@greenfield/api-core": "workspace:*",
+    "@greenfield/gear-api": "workspace:*",
     "@greenfield/photo-api": "workspace:*",
     "@react-router/node": "^8.4.0",
     "@react-router/serve": "^8.4.0",

@@ -1,9 +1,23 @@
+import { unwrap } from "@greenfield/api-core/server";
 import { imageContentTypes } from "@greenfield/photo-api";
 import { useEffect, useState } from "react";
 import { data, Form, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/photos.new";
+import { gearClientContext } from "../context";
 
 type Problem = { code?: string; detail?: string };
+
+// loader は使用機材の候補を gear API から引く（loader 合成）。
+// gear が落ちていても投稿はできる——セレクタが空になるだけで本体を道連れにしない
+export async function loader({ context }: Route.LoaderArgs) {
+  const gear = context.get(gearClientContext);
+  try {
+    const res = await unwrap(gear.GET("/items", { params: { query: { limit: 100 } } }));
+    return { items: res.items ?? [] };
+  } catch {
+    return { items: [] };
+  }
+}
 
 async function postForm<T>(url: string, body: Record<string, string>): Promise<T> {
   const res = await fetch(url, { method: "POST", body: new URLSearchParams(body) });
@@ -25,6 +39,7 @@ export async function clientAction({ request }: Route.ClientActionArgs) {
       caption: String(form.get("caption") ?? ""),
       visibility: String(form.get("visibility") ?? "private"),
       content_type: file.type,
+      gear_item_id: String(form.get("gear_item_id") ?? ""),
     });
     const put = await fetch(created.uploadUrl, {
       method: "PUT",
@@ -44,7 +59,7 @@ export function meta() {
   return [{ title: "投稿 | greenfield photos" }];
 }
 
-export default function NewPhoto({ actionData }: Route.ComponentProps) {
+export default function NewPhoto({ loaderData, actionData }: Route.ComponentProps) {
   const submitting = useNavigation().state === "submitting";
   // 投稿は clientAction でしか動かないため、ハイドレーション前の素のフォーム送信を防ぐ
   const [hydrated, setHydrated] = useState(false);
@@ -61,6 +76,18 @@ export default function NewPhoto({ actionData }: Route.ComponentProps) {
         <label className="block">
           <span className="text-sm">キャプション</span>
           <textarea name="caption" maxLength={1000} rows={3} className={field} />
+        </label>
+        <label className="block">
+          <span className="text-sm">使用機材（任意）</span>
+          <select name="gear_item_id" defaultValue="" className={field}>
+            <option value="">指定しない</option>
+            {loaderData.items.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.maker ? `${i.maker} ` : ""}
+                {i.name}
+              </option>
+            ))}
+          </select>
         </label>
         <fieldset className="flex gap-4 text-sm">
           <label className="flex items-center gap-1">

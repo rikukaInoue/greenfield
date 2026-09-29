@@ -12,6 +12,8 @@ export async function action({ request, context }: Route.ActionArgs) {
     return Response.json({ code: "validation_failed", detail: "対応していない画像形式です" }, { status: 422 });
   }
   const api = context.get(photoClientContext);
+  const gearItemRaw = String(form.get("gear_item_id") ?? "");
+  const gearItemId = /^[1-9]\d*$/.test(gearItemRaw) ? Number(gearItemRaw) : undefined;
   try {
     const created = await unwrap(
       api.POST("/v2/photos", {
@@ -19,10 +21,12 @@ export async function action({ request, context }: Route.ActionArgs) {
           caption: String(form.get("caption") ?? ""),
           content_type: contentType as ImageContentType,
           visibility: form.get("visibility") === "public" ? "public" : "private",
+          // 紐付けは photo→gear の同期コマンドで確定する（4.4）。ここは値を渡すだけ
+          ...(gearItemId ? { gear_item_id: gearItemId } : {}),
         },
       }),
     );
-    return Response.json({ id: created.id, uploadUrl: created.upload_url, contentType });
+    return Response.json({ id: created.id, uploadUrl: created.upload_url, contentType, gearLinkStatus: created.gear_link_status ?? "" });
   } catch (err) {
     return toJsonError(err);
   }
