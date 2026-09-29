@@ -277,33 +277,31 @@ jobs:
           done
           echo "Keycloak が起動しない" >&2; docker logs keycloak | tail -30; exit 1
 
-      - name: authz を OIDC 付きで再起動する
-        # 旧(devモード)の停止も新(OIDC)の起動も**観測で**確かめる(#160)。
-        # sleep 固定は旧が :8100 を握ったまま残ることがあり(orphan で実測)、
-        # その場合、新は bind 失敗で即死して healthz ポーリングが旧に当たる。
+      - name: authz を OIDC 付きで起動する（:8101。dev モードとはポートを分ける）
+        # 以前はここで旧(devモード)を pkill して :8100 を使い回していたが、
+        # **旧プロセスは pkill -f 'exe/authz' にも -9 にも掛からず生き残る**ことが
+        # run 36529558075 で確定した(新は bind: address already in use で即死し、
+        # healthz ポーリングが旧に当たって検査が dev モード相手に走る = 400)。
+        # プロセスの後始末に依存するのをやめ、OIDC 実体は別ポートに立てて
+        # 以降のステップを全部そちらへ向ける(#160)。旧は :8100 で放置してよい
+        # (authz-check の役目は終わっており、他の何もそこを見ない)。
         run: |
-          pkill -f 'exe/authz' 2>/dev/null || true
-          # 旧が本当に消えるまで待つ。healthz が応答する限り旧は生きている
-          for i in $(seq 1 20); do
-            curl -sf -o /dev/null -m 1 http://localhost:8100/healthz || break
-            if [ "$i" = 10 ]; then pkill -9 -f 'exe/authz' 2>/dev/null || true; fi
-            sleep 1
-          done
           ( cd platform/authz && GOWORK=off \
+            AUTHZ_ADDR=:8101 \
             OIDC_ISSUER=http://localhost:8180/realms/greenfield \
             OPENFGA_URL=http://localhost:8080 \
             go run ./cmd/authz & )
           # healthz は dev/OIDC を区別できない(どちらも 200)ので readiness にならない。
           # 無トークンの POST /check は OIDC=401 / dev=400(空 JSON はデコードを通って
-          # バリデーション落ち)なので、401 だけを「OIDC の新実体が立った」とみなす
+          # バリデーション落ち)なので、401 だけを「OIDC の実体が立った」とみなす
           c=000
           for i in $(seq 1 40); do
-            c=$(curl -s -o /dev/null -w "%{http_code}" -m 2 -X POST http://localhost:8100/check \
+            c=$(curl -s -o /dev/null -w "%{http_code}" -m 2 -X POST http://localhost:8101/check \
               -H "Content-Type: application/json" -d '{}' || echo 000)
             if [ "$c" = 401 ]; then exit 0; fi
             sleep 2
           done
-          echo "authz(OIDC) が起動しない、または dev モードの旧実体が残っている (last=$c)" >&2
+          echo "authz(OIDC) が :8101 で起動しない (last=$c)" >&2
           exit 1
         env:
           ENV: ci
@@ -315,7 +313,7 @@ jobs:
         run: |
           ( cd services/photo && GOWORK=off \
             OIDC_ISSUER=http://localhost:8180/realms/greenfield \
-            AUTHZ_URL=http://localhost:8100 \
+            AUTHZ_URL=http://localhost:8101 \
             M2M_TOKEN_URL=http://localhost:8180/realms/greenfield/protocol/openid-connect/token \
             M2M_CLIENT_SECRET=svc-photo-dev-secret \
             PHOTO_EXTERNAL_ADDR=:18080 PHOTO_INTERNAL_ADDR=:18081 PHOTO_ADMIN_ADDR=:18082 \
@@ -331,6 +329,7 @@ jobs:
         env:
           PHOTO_EXTERNAL_URL: http://localhost:18080
           PHOTO_INTERNAL_URL: http://localhost:18081
+          AUTHZ_URL: http://localhost:8101
 
       # --- ここから 4.1: サービス間結合（gear→photo の M2M） ---
       - name: gear を本番アダプタ（OIDCDeps）で起動する
