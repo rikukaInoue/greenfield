@@ -49,6 +49,10 @@ type ItemView struct {
 	Name    string
 	Maker   string
 	Created string
+	// PhotoCount は作例の件数。ReplicaView 由来の表示専用の値で、一覧の行ごとに
+	// photo を呼ぶ HTTP 越しの N+1 を避けるために持つ（internal-01 §ReplicaView）。
+	// 結果整合の窓があるため業務判断には使わない
+	PhotoCount int64
 }
 
 // ItemDetail は詳細 + 作例。

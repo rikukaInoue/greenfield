@@ -24,6 +24,9 @@ var (
 	// テーブル位置の名前。`db`.`table` / db.table / table のいずれも拾う
 	tableRef    = regexp.MustCompile("(?i)\\b(?:FROM|JOIN|INTO|UPDATE)\\s+`?([A-Za-z_][A-Za-z0-9_]*)`?(?:\\.`?([A-Za-z_][A-Za-z0-9_]*)`?)?")
 	lineComment = regexp.MustCompile("(?m)--.*$")
+	// `ON DUPLICATE KEY UPDATE col = ...` の UPDATE はテーブル位置ではなく列が続く。
+	// tableRef が列名をテーブルと誤認するため、突き合わせの前に句ごと除去する
+	dupKeyUpdate = regexp.MustCompile(`(?i)ON\s+DUPLICATE\s+KEY\s+UPDATE`)
 )
 
 func main() {
@@ -79,6 +82,7 @@ func lint(dir string) ([]string, error) {
 			return nil, err
 		}
 		src := lineComment.ReplaceAllString(string(b), "")
+		src = dupKeyUpdate.ReplaceAllString(src, "ON DUPLICATE KEY")
 		seen := map[string]bool{}
 		for _, m := range tableRef.FindAllStringSubmatch(src, -1) {
 			if m[2] != "" {

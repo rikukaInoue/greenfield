@@ -42,7 +42,9 @@ func (r *ItemReader) List(ctx context.Context, limit int) ([]usecase.ItemView, e
 	}
 	out := make([]usecase.ItemView, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, view(row.ID, row.Kind, row.Name, row.Maker, row.CreatedAt))
+		v := view(row.ID, row.Kind, row.Name, row.Maker, row.CreatedAt)
+		v.PhotoCount = row.PhotoCount
+		out = append(out, v)
 	}
 	return out, nil
 }

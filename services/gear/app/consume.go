@@ -13,6 +13,7 @@ import (
 
 	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/eventbus"
+	"github.com/rikukaInoue/greenfield/services/gear/replicaview"
 	"github.com/rikukaInoue/greenfield/services/gear/usecase"
 )
 
@@ -38,7 +39,9 @@ func ConsumeConfigFromEnv() ConsumeConfig {
 type inboxAdapter struct{ i consistency.Inbox }
 
 func (a inboxAdapter) MarkProcessed(ctx context.Context, ev usecase.Event) error {
-	err := a.i.MarkProcessed(ctx, consistency.Event(ev))
+	err := a.i.MarkProcessed(ctx, consistency.Event{
+		ID: ev.ID, Type: ev.Type, AggregateID: ev.AggregateID, Payload: ev.Payload,
+	})
 	if errors.Is(err, consistency.ErrDuplicateEvent) {
 		return usecase.ErrDuplicateEvent
 	}
@@ -54,7 +57,7 @@ func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
 		return fmt.Errorf("gear db: %w", err)
 	}
 	defer db.Close()
-	events := usecase.NewPhotoEvents(consistency.NewAtomic(db), inboxAdapter{})
+	events := usecase.NewPhotoEvents(consistency.NewAtomic(db), inboxAdapter{}, replicaview.NewPhotoReplica(db))
 
 	// AWS_ENDPOINT_URL（LocalStack）・認証情報は SDK の既定解決に任せる
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
@@ -63,7 +66,9 @@ func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
 	}
 	consumer := eventbus.NewConsumer(sqs.NewFromConfig(awsCfg), cfg.QueueURL,
 		func(ctx context.Context, ev consistency.Event) error {
-			applied, err := events.Process(ctx, usecase.Event(ev))
+			applied, err := events.Process(ctx, usecase.Event{
+				ID: ev.ID, Type: ev.Type, AggregateID: ev.AggregateID, Payload: ev.Payload,
+			})
 			if err != nil {
 				return err
 			}
@@ -74,4 +79,41 @@ func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
 		})
 	slog.Info("consumer: 受信開始", "queue", cfg.QueueURL, "endpoint", os.Getenv("AWS_ENDPOINT_URL"))
 	return consumer.Run(ctx)
+}
+
+// RebuildReplica は photo_replica と対応する inbox 記録を消し、再構築の起点を作る。
+// このあと photo 側で `photo republish --since` を実行すると consumer が再適用する
+// （再生の正は outbox。check #10）。
+func RebuildReplica(ctx context.Context, cfg ConsumeConfig) error {
+	db, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return fmt.Errorf("gear db: %w", err)
+	}
+	defer db.Close()
+	r := replicaview.NewPhotoReplica(db)
+	if err := r.Rebuild(ctx, []string{"photo.published", "photo.deleted"}); err != nil {
+		return err
+	}
+	fp, n, err := r.Fingerprint(ctx)
+	if err != nil {
+		return err
+	}
+	slog.Info("replica を初期化", "rows", n, "fingerprint", fp)
+	return nil
+}
+
+// ReplicaStatus は複製の行数と指紋を出す（check #10 の一致検査に使う）。
+func ReplicaStatus(ctx context.Context, cfg ConsumeConfig) error {
+	db, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return fmt.Errorf("gear db: %w", err)
+	}
+	defer db.Close()
+	fp, n, err := replicaview.NewPhotoReplica(db).Fingerprint(ctx)
+	if err != nil {
+		return err
+	}
+	// 機械で読む出力なので1行の固定形式にする
+	fmt.Printf("rows=%d fingerprint=%s\n", n, fp)
+	return nil
 }

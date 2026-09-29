@@ -391,6 +391,9 @@ jobs:
         env:
           LOCALSTACK_CONTAINER: localstack
 
+      - name: ReplicaView の再構築一致（#10）
+        run: dev/scripts/replica-check.sh
+
 
   frontend:
     needs: changes
