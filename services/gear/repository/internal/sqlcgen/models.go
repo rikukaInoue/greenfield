@@ -28,3 +28,15 @@ type Item struct {
 	CreatedBy string
 	CreatedAt time.Time
 }
+
+// 他ドメイン（photo）の公開データの読み取り専用の複製。表示専用
+type PhotoReplica struct {
+	// photo サービスの ID（正は相手）
+	PhotoID uint64
+	// どの機材の作例か
+	GearItemID uint64
+	Caption    string
+	// photo 側の作成時刻（並び順に使う）
+	PhotoCreatedAt time.Time
+	ReplicatedAt   time.Time
+}
