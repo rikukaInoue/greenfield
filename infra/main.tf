@@ -25,6 +25,11 @@ provider "aws" {
 
 variable "region" { default = "ap-northeast-1" }
 variable "image" { description = "photo コンテナイメージ(ECR URI)" }
+variable "deploy_marker" { default = "v1" } # taskdef の改版トリガー(B/G の再演用)
+# ECS ネイティブの戦略。**BLUE_GREEN と CANARY は別物**(APIが排他を強制する。実測:
+# BLUE_GREEN に canaryConfiguration を付けると InvalidParameterException。
+# なお terraform provider はこの無効な組を黙って受理して canary を落とす)
+variable "deploy_strategy" { default = "BLUE_GREEN" }
 
 data "aws_availability_zones" "azs" { state = "available" }
 
@@ -196,6 +201,7 @@ locals {
     { name = "AWS_REGION", value = var.region },
     { name = "FLAGS_SOURCE", value = "file" },
     { name = "FLAGS_FILE", value = "/etc/greenfield/flags.json" },
+    { name = "DEPLOY_MARKER", value = var.deploy_marker },
   ]
 }
 
@@ -278,14 +284,64 @@ resource "aws_lb_target_group" "photo" {
   # B/G(7.2)がターゲットグループを2枚使うのでここでは1枚に留める
 }
 
+# B/G はターゲットグループを2枚使い、ECS がリスナールールの向き先を掛け替える
+resource "aws_lb_target_group" "photo_alt" {
+  name        = "greenfield-71-photo-alt"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+  health_check {
+    path              = "/healthz"
+    interval          = 10
+    healthy_threshold = 2
+  }
+}
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
+  # 既定は 404 の固定応答。実トラフィックは下の**ルール**が運ぶ
+  # (ECS ネイティブ B/G は「リスナールール」を操作するため、default_action では管理できない)
   default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "no rule matched"
+      status_code  = "404"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "photo" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.photo.arn
   }
+  condition {
+    path_pattern { values = ["/*"] }
+  }
+  lifecycle {
+    # B/G 中は ECS がこのルールの forward 先(重み)を書き換える。tf が戻さないように
+    ignore_changes = [action]
+  }
+}
+
+# ECS が ELB を操作するためのインフラロール(ネイティブ B/G の要件)
+resource "aws_iam_role" "ecs_infra" {
+  name               = "greenfield-71-ecs-infra"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{ Effect = "Allow", Principal = { Service = "ecs.amazonaws.com" }, Action = "sts:AssumeRole" }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_infra" {
+  role       = aws_iam_role.ecs_infra.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers"
 }
 
 resource "aws_ecs_service" "photo" {
@@ -303,8 +359,25 @@ resource "aws_ecs_service" "photo" {
     target_group_arn = aws_lb_target_group.photo.arn
     container_name   = "photo"
     container_port   = 8080
+    advanced_configuration {
+      alternate_target_group_arn = aws_lb_target_group.photo_alt.arn
+      production_listener_rule   = aws_lb_listener_rule.photo.arn
+      role_arn                   = aws_iam_role.ecs_infra.arn
+    }
   }
-  depends_on = [aws_lb_listener.http]
+  deployment_configuration {
+    # ECS ネイティブ(CodeDeploy 不要。docs/conventions/internal-06 §10.3)。
+    strategy             = var.deploy_strategy
+    bake_time_in_minutes = 2
+    dynamic "canary_configuration" {
+      for_each = var.deploy_strategy == "CANARY" ? [1] : []
+      content {
+        canary_percent              = 20
+        canary_bake_time_in_minutes = 1
+      }
+    }
+  }
+  depends_on = [aws_lb_listener_rule.photo, aws_iam_role_policy_attachment.ecs_infra]
 }
 
 output "alb_dns" { value = aws_lb.main.dns_name }
