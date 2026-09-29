@@ -124,6 +124,9 @@ func (r *Relay) RunOnce(ctx context.Context) (int, error) {
 // Republish は期間内のイベントを送信済みかどうかに関わらず bus へ再送する。
 // SQS は再生できないため**再生の正は outbox**（internal-03 §2.3、check #10）。
 // 再送も at-least-once の一形態であり、受信側の冪等性（inbox）で吸収される。
+//
+// バス側の重複排除には ID ではなく run ごとの DedupID を使う。ID のままだと
+// 5分以内に送られたイベントが SNS FIFO の窓で**黙って落ち**、再構築が空振りする。
 func (r *Relay) Republish(ctx context.Context, since time.Time) (int, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT event_id, event_type, aggregate_id, payload
@@ -143,8 +146,10 @@ func (r *Relay) Republish(ctx context.Context, since time.Time) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("relay: rows: %w", err)
 	}
+	run := time.Now().UnixNano()
 	sent := 0
 	for _, ev := range events {
+		ev.DedupID = fmt.Sprintf("repub-%d-%s", run, ev.ID)
 		if err := r.bus.Publish(ctx, ev); err != nil {
 			return sent, fmt.Errorf("relay: 再送 %s: %w", ev.ID, err)
 		}

@@ -35,6 +35,8 @@ func TestLint(t *testing.T) {
 		{"backquoted cross database", "SELECT * FROM `gear`.`items`;", []string{`qualified table "gear.items"`}},
 		{"unknown table", "SELECT * FROM items;", []string{`table "items" is not in`}},
 		{"comment ignored", "-- FROM gear.items\nSELECT * FROM photos;", nil},
+		// ON DUPLICATE KEY UPDATE の直後は列名。テーブルと誤認しない（4.3 の upsert で実際に踏んだ）
+		{"upsert", "INSERT INTO photos (id) VALUES (?) ON DUPLICATE KEY UPDATE id = VALUES(id);", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -22,3 +22,14 @@ sql:
         out: "readmodel/internal/sqlcgen"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+  # ReplicaView（他ドメインの公開データの複製）。書き込みはイベント購読からのみ。
+  # readmodel / repository と出力先を分け、層の境界を internal で守る
+  - engine: "mysql"
+    schema: "db/schema.sql"
+    queries: "db/queries/replicaview"
+    gen:
+      go:
+        package: "sqlcgen"
+        out: "replicaview/internal/sqlcgen"
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true

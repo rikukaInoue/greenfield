@@ -15,6 +15,13 @@ type Event struct {
 	Type        string
 	AggregateID string
 	Payload     []byte
+
+	// DedupID はバス側の重複排除（MessageDeduplicationId）に使う値。空なら ID を使う。
+	// 通常の配送では設定しない。Republish だけが run ごとに別の値を入れる——
+	// バスの5分窓は**事故の二重送信**を抑えるためのもので、意図した再生まで
+	// 黙って落とされては再構築が空振りする（実測: check #10 で踏んだ）。
+	// 受信側の重複排除の鍵は常に ID（inbox）。
+	DedupID string
 }
 
 // NewEventID はイベントIDを採番する（UUID v4 相当の乱数16バイト）。

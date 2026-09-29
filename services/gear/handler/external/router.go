@@ -104,9 +104,15 @@ type ListItemsInput struct {
 	Limit int `query:"limit,omitempty" minimum:"1" maximum:"100" default:"50" doc:"取得件数"`
 }
 
+// ListedItem は一覧の行。作例の件数は ReplicaView 由来（結果整合の窓あり、表示専用）。
+type ListedItem struct {
+	Item
+	PhotoCount int64 `json:"photo_count" doc:"作例の件数（反映に遅延がありうる）"`
+}
+
 type ListItemsOutput struct {
 	Body struct {
-		Items []Item `json:"items" doc:"機材の一覧"`
+		Items []ListedItem `json:"items" doc:"機材の一覧"`
 	}
 }
 
@@ -142,9 +148,9 @@ func (h *handlers) listItems(ctx context.Context, in *ListItemsInput) (*ListItem
 		return nil, toHTTP(ctx, err)
 	}
 	out := &ListItemsOutput{}
-	out.Body.Items = make([]Item, 0, len(views))
+	out.Body.Items = make([]ListedItem, 0, len(views))
 	for _, v := range views {
-		out.Body.Items = append(out.Body.Items, fromView(v))
+		out.Body.Items = append(out.Body.Items, ListedItem{Item: fromView(v), PhotoCount: v.PhotoCount})
 	}
 	return out, nil
 }

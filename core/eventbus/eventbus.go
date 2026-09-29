@@ -41,18 +41,24 @@ func NewSNSBus(client *sns.Client, topicARN string) *SNSBus {
 
 // Publish はイベントを SNS FIFO トピックへ送る。
 //   - MessageGroupId = 集約ID: 同一集約内の順序保証をバス側でも成立させる
-//   - MessageDeduplicationId = イベントID: 5分窓の重複をバス側でも弾く（補助。
-//     主たる防御は受信側の inbox。5分を超えた再送・Republish は素通りする前提）
+//   - MessageDeduplicationId = イベントID（Republish は run ごとの DedupID）:
+//     5分窓の重複をバス側でも弾く（補助。主たる防御は受信側の inbox）。
+//     窓は**事故の二重送信**用であり、意図した再生（Republish）は DedupID で迂回する
+//     ——迂回しないと5分以内のイベントが黙って落ち、再構築が空振りする（check #10 で実測）
 func (b *SNSBus) Publish(ctx context.Context, ev consistency.Event) error {
 	body, err := json.Marshal(envelope{ID: ev.ID, Type: ev.Type, AggregateID: ev.AggregateID, Payload: ev.Payload})
 	if err != nil {
 		return fmt.Errorf("eventbus: encode: %w", err)
 	}
+	dedup := ev.ID
+	if ev.DedupID != "" {
+		dedup = ev.DedupID
+	}
 	_, err = b.client.Publish(ctx, &sns.PublishInput{
 		TopicArn:               aws.String(b.topicARN),
 		Message:                aws.String(string(body)),
 		MessageGroupId:         aws.String(ev.AggregateID),
-		MessageDeduplicationId: aws.String(ev.ID),
+		MessageDeduplicationId: aws.String(dedup),
 	})
 	if err != nil {
 		return fmt.Errorf("eventbus: publish %s: %w", ev.ID, err)

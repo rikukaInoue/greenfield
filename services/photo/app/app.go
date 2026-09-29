@@ -218,7 +218,9 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 type outboxEventual struct{ o consistency.Outbox }
 
 func (e outboxEventual) Publish(ctx context.Context, ev usecase.Event) error {
-	return e.o.Publish(ctx, consistency.Event(ev))
+	return e.o.Publish(ctx, consistency.Event{
+		ID: ev.ID, Type: ev.Type, AggregateID: ev.AggregateID, Payload: ev.Payload,
+	})
 }
 
 // APIs はリスナー3系統の huma API を組み立てる。スペック生成とサーバ起動で共有する。

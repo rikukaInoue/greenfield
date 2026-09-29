@@ -38,6 +38,11 @@ func main() {
 	case len(os.Args) >= 2 && os.Args[1] == "consume":
 		// photo のイベントを SQS から受けて inbox + 業務処理へ（4.2）
 		err = app.RunConsumer(ctx, app.ConsumeConfigFromEnv())
+	case len(os.Args) >= 2 && os.Args[1] == "rebuild-replica":
+		// 複製と inbox 記録を消して再構築の起点を作る。photo republish とセットで使う（check #10）
+		err = app.RebuildReplica(ctx, app.ConsumeConfigFromEnv())
+	case len(os.Args) >= 2 && os.Args[1] == "replica-status":
+		err = app.ReplicaStatus(ctx, app.ConsumeConfigFromEnv())
 	default:
 		err = app.Run(ctx, app.ConfigFromEnv())
 	}

@@ -38,8 +38,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-photo() { if [ -n "$PHOTO_BIN" ]; then "$PHOTO_BIN" "$@"; else ( cd services/photo && GOWORK=off go run ./cmd/photo "$@" ); fi; }
-gear()  { if [ -n "$GEAR_BIN"  ]; then "$GEAR_BIN"  "$@"; else ( cd services/gear  && GOWORK=off go run ./cmd/gear  "$@" ); fi; }
+# go run を常駐で使うと kill が go run にしか届かず実バイナリが孤児になる
+# （ポーリングを続けて後続の検査のメッセージを黙って横取りする。ローカルで実際に踏んだ）。
+# 先にビルドし、常駐は exec 付きサブシェルで起動して kill が本体に届くようにする。
+if [ -z "$PHOTO_BIN" ]; then
+  PHOTO_BIN="$tmp/photo"; ( cd services/photo && GOWORK=off go build -o "$PHOTO_BIN" ./cmd/photo )
+fi
+if [ -z "$GEAR_BIN" ]; then
+  GEAR_BIN="$tmp/gear"; ( cd services/gear && GOWORK=off go build -o "$GEAR_BIN" ./cmd/gear )
+fi
+photo() { "$PHOTO_BIN" "$@"; }
+gear()  { "$GEAR_BIN" "$@"; }
+start_bg() { # start_bg <logfile> <env...> <cmd...> — exec で子を作らず起動（kill が届く）
+  local log=$1; shift
+  ( exec env "$@" > "$log" 2>&1 ) &
+  pids="$pids $!"
+}
 
 # 検証のたびに前回の痕跡で結果が変わらないよう、専用の印で作った行だけ消す
 ${MYSQL} photo -e "DELETE FROM outbox WHERE aggregate_id LIKE 'photo:90%';" >/dev/null 2>&1
@@ -61,8 +75,7 @@ N=$(${MYSQL} -N photo -e "SELECT COUNT(*) FROM outbox WHERE event_id='${EVENT_ID
 
 echo
 echo "2. relay を起動すると遅れて届く（#8 後半）"
-RELAY_INTERVAL=1s photo relay > "$tmp/relay.log" 2>&1 &
-pids="$pids $!"
+start_bg "$tmp/relay.log" RELAY_INTERVAL=1s "$PHOTO_BIN" relay
 for i in $(seq 1 30); do
   P=$(${MYSQL} -N photo -e "SELECT published_at IS NOT NULL FROM outbox WHERE event_id='${EVENT_ID}';" 2>/dev/null)
   [ "$P" = 1 ] && break
@@ -72,8 +85,7 @@ done
 
 echo
 echo "3. 受信側: inbox に記録され業務処理が1回だけ走る"
-gear consume > "$tmp/consume.log" 2>&1 &
-pids="$pids $!"
+start_bg "$tmp/consume.log" "$GEAR_BIN" consume
 for i in $(seq 1 30); do
   N=$(${MYSQL} -N gear -e "SELECT COUNT(*) FROM inbox WHERE event_id='${EVENT_ID}';" 2>/dev/null)
   [ "$N" = 1 ] && break

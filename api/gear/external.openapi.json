@@ -223,7 +223,7 @@
           "items": {
             "description": "機材の一覧",
             "items": {
-              "$ref": "#/components/schemas/Item"
+              "$ref": "#/components/schemas/ListedItem"
             },
             "type": [
               "array",
@@ -233,6 +233,57 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "ListedItem": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "description": "投稿時刻",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "機材ID",
+            "examples": [
+              1
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "分類",
+            "examples": [
+              "camera"
+            ],
+            "type": "string"
+          },
+          "maker": {
+            "description": "メーカー名",
+            "examples": [
+              "FUJIFILM"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "機種名",
+            "examples": [
+              "X-T5"
+            ],
+            "type": "string"
+          },
+          "photo_count": {
+            "description": "作例の件数（反映に遅延がありうる）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "photo_count",
+          "id",
+          "kind",
+          "name"
         ],
         "type": "object"
       },
