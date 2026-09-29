@@ -30,6 +30,8 @@ app.localhost       → SSR
 
 `*.localhost` はブラウザがループバックへ解決する（RFC 6761）ため/etc/hosts不要。curl等ホストのCLIから叩く場合のみ `--resolve` またはhosts追記。localhostはブラウザのsecure context扱いのため、TOTP / WebAuthnはTLSなしで動作する。secure cookie等TLSが必要な検証のみmkcertでCaddyに証明書を配る。
 
+**Tier 1.5（実測済みの中間形）**。認証まわりを触る期間だけ、アプリはホストの `go run` のまま issuer を `http://auth.localhost/realms/greenfield` に差し替えると、rebuild なしでブラウザと同じ issuer 名で開発できる（Caddy と Keycloak だけコンテナ）。成立条件: macOS の既定リゾルバは `*.localhost` をループバックに解決する（実測）。Linux ホストや CGO 無効のホスト実行は /etc/hosts が要る。純 Go リゾルバ（GODEBUG=netdns=go）は解決できない。検証記録: verification-log/2026-09-30-tier15.md。
+
 **issuer整合（このTierの存在理由）**。OIDCのissuer / JWKS URLは、ブラウザとサーバ側コンテナ（SSR、各サービスのJWKS取得）の両方から同じ名前で到達できなければならない。CaddyをComposeネットワーク内に置き、`auth.localhost` 等を**network aliasとして張る**ことで、コンテナ内の名前解決もCaddyへ向け、issuerを `http://auth.localhost` の1つに固定する。認証フロー・ステップアップのリダイレクト・サブドメインCORS・SSEを通す検証はこのTierで行い、それ以外はTier 1で足りる。
 
 ## 模擬しないもの
