@@ -1,0 +1,6 @@
+# 使い捨て構成の state はローカルに置く(リポジトリにもリモートにも持たない)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
