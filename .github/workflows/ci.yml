@@ -205,10 +205,12 @@ jobs:
   # ここは platform/authz が影響範囲に入ったときだけ実インフラで検証する。
   authz:
     needs: changes
-    # photo の配線（oidcauthn+authzhttp）も一気通貫で確かめるため、photo の変更でも起こす
+    # photo の配線（oidcauthn+authzhttp）と gear のサービス間結合（4.1）も
+    # 一気通貫で確かめるため、photo / gear の変更でも起こす
     if: >-
       contains(fromJSON(needs.changes.outputs.go), './platform/authz') ||
-      contains(fromJSON(needs.changes.outputs.go), './services/photo')
+      contains(fromJSON(needs.changes.outputs.go), './services/photo') ||
+      contains(fromJSON(needs.changes.outputs.go), './services/gear')
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -291,8 +293,8 @@ jobs:
         env:
           ENV: ci
 
-      - name: photo のマイグレーションを流す
-        run: MODULES=./services/photo mise run --quiet migrate
+      - name: photo と gear のマイグレーションを流す
+        run: MODULES="./services/photo ./services/gear" mise run --quiet migrate
 
       - name: photo を本番アダプタ（OIDCDeps）で起動する
         run: |
@@ -314,6 +316,27 @@ jobs:
         env:
           PHOTO_EXTERNAL_URL: http://localhost:18080
           PHOTO_INTERNAL_URL: http://localhost:18081
+
+      # --- ここから 4.1: サービス間結合（gear→photo の M2M） ---
+      - name: gear を本番アダプタ（OIDCDeps）で起動する
+        run: |
+          ( cd services/gear && GOWORK=off \
+            OIDC_ISSUER=http://localhost:8180/realms/greenfield \
+            PHOTO_INTERNAL_URL=http://localhost:18081 \
+            M2M_TOKEN_URL=http://localhost:8180/realms/greenfield/protocol/openid-connect/token \
+            M2M_CLIENT_SECRET=svc-gear-dev-secret \
+            GEAR_EXTERNAL_ADDR=:18090 GEAR_INTERNAL_ADDR=:18091 GEAR_ADMIN_ADDR=:18092 \
+            go run ./cmd/gear & )
+          for i in $(seq 1 40); do
+            curl -sf -o /dev/null http://localhost:18090/healthz && exit 0
+            sleep 2
+          done
+          echo "gear が起動しない" >&2; exit 1
+
+      - name: サービス間結合の一気通貫（4.1）
+        run: dev/scripts/s2s-check.sh
+        env:
+          GEAR_EXTERNAL_URL: http://localhost:18090
 
 
   frontend:

@@ -19,13 +19,21 @@ import (
 	_ "github.com/go-sql-driver/mysql" // localauthz ストアへの接続に使う driver は合成ルートが選ぶ
 
 	"github.com/rikukaInoue/greenfield/core/authz"
+	"github.com/rikukaInoue/greenfield/core/authz/devtoken"
 	"github.com/rikukaInoue/greenfield/core/authz/localauthz"
+	"github.com/rikukaInoue/greenfield/core/authz/oidcauthn"
 	"github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
 	"github.com/rikukaInoue/greenfield/core/authz/staticauthn"
+	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	"github.com/rikukaInoue/greenfield/core/httpclient"
 	"github.com/rikukaInoue/greenfield/services/gear/handler/admin"
 	"github.com/rikukaInoue/greenfield/services/gear/handler/external"
 	"github.com/rikukaInoue/greenfield/services/gear/handler/internalapi"
+	"github.com/rikukaInoue/greenfield/services/gear/photocatalog"
+	"github.com/rikukaInoue/greenfield/services/gear/readmodel"
+	"github.com/rikukaInoue/greenfield/services/gear/repository"
+	"github.com/rikukaInoue/greenfield/services/gear/usecase"
 )
 
 // Version は OpenAPI の info.version。破壊的変更時のメジャー更新は oasdiff と連動させる
@@ -51,16 +59,41 @@ type Config struct {
 	AdminAddr    string
 	// LocalAuthzDSN は擬似ReBACのタプル置き場。サービスのDBとは別（本番の authzサービス相当）。
 	LocalAuthzDSN string
+	// DSN は gear の業務データ。アプリ実行用のユーザーで接続する。
+	DSN string
+	// PhotoInternalURL は photo の internal リスナー。作例を M2M で引く。
+	PhotoInternalURL string
+	// OIDCIssuer が設定されていれば本番アダプタ（oidcauthn + 実トークン）で組む。
+	OIDCIssuer string
+	// M2M は photo internal を呼ぶための client_credentials（svc-gear）。
+	M2M M2MConfig
+}
+
+// M2MConfig はサービス間認証のクライアント資格情報。
+type M2MConfig struct {
+	TokenURL     string
+	ClientID     string
+	ClientSecret string
+	Scopes       []string
 }
 
 // ConfigFromEnv は GEAR_{EXTERNAL,INTERNAL,ADMIN}_ADDR から設定を読む。
 // 既定はポート割当表のとおり :8080 / :8081 / :8082。
 func ConfigFromEnv() Config {
 	return Config{
-		ExternalAddr:  envOr("GEAR_EXTERNAL_ADDR", ":8090"),
-		InternalAddr:  envOr("GEAR_INTERNAL_ADDR", ":8091"),
-		AdminAddr:     envOr("GEAR_ADMIN_ADDR", ":8092"),
-		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"),
+		ExternalAddr:     envOr("GEAR_EXTERNAL_ADDR", ":8090"),
+		InternalAddr:     envOr("GEAR_INTERNAL_ADDR", ":8091"),
+		AdminAddr:        envOr("GEAR_ADMIN_ADDR", ":8092"),
+		LocalAuthzDSN:    envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"),
+		DSN:              envOr("GEAR_DSN", "gear_app:gear_app@tcp(127.0.0.1:13306)/gear?parseTime=true"),
+		PhotoInternalURL: envOr("PHOTO_INTERNAL_URL", "http://localhost:8081"),
+		OIDCIssuer:       os.Getenv("OIDC_ISSUER"),
+		M2M: M2MConfig{
+			TokenURL:     os.Getenv("M2M_TOKEN_URL"),
+			ClientID:     envOr("M2M_CLIENT_ID", "svc-gear"),
+			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
+			Scopes:       []string{"internal:photo"},
+		},
 	}
 }
 
@@ -71,6 +104,8 @@ type Deps struct {
 	Lister        authz.Lister
 	Relations     authz.RelationWriter
 	Assurance     authz.AssuranceChecker
+	Commands      *usecase.ItemCommands
+	Queries       *usecase.ItemQueries
 
 	closers []func() error
 }
@@ -87,7 +122,7 @@ func (d *Deps) Close() error {
 // LocalDeps はローカル開発・CI用の実装を組み立てる（StaticAuthenticator + 擬似ReBAC）。
 // 「緩い」実装ではなく「本物らしく厳しい」実装である点が重要:
 // トークンがなければ401、所有者タプルがなければ不許可、一覧は ListAccessible が返したIDのみ。
-func LocalDeps(cfg Config) (*Deps, error) {
+func LocalDeps(_ context.Context, cfg Config) (*Deps, error) {
 	authn, err := staticauthn.New()
 	if err != nil {
 		return nil, err
@@ -97,13 +132,58 @@ func LocalDeps(cfg Config) (*Deps, error) {
 		return nil, fmt.Errorf("localauthz store: %w", err)
 	}
 	store := localauthz.New(db, actionRelations)
+	gearDB, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("gear db: %w", err)
+	}
+	// dev ループでは photo も staticauthn なので、devtoken の M2M（svc-gear、
+	// scope internal:photo）で呼ぶ。Idempotency-Key と traceparent の付与は
+	// 本番と同じ core/httpclient を通る
+	token := httpclient.StaticTokenSource(devtoken.Mint(devtoken.Claims{
+		Subject: "svc-gear", ClientID: "svc-gear", Service: true,
+		Scopes: []string{"internal:photo"},
+	}))
+	photos, err := photocatalog.New(cfg.PhotoInternalURL, httpclient.Client(token))
+	if err != nil {
+		return nil, fmt.Errorf("photocatalog: %w", err)
+	}
 	return &Deps{
 		Authenticator: authn,
 		Authorizer:    store,
 		Lister:        store,
 		Relations:     store,
 		Assurance:     simpleassurance.New(),
-		closers:       []func() error{db.Close},
+		Commands:      usecase.NewItemCommands(consistency.NewAtomic(gearDB), repository.NewItemRepository(gearDB)),
+		Queries:       usecase.NewItemQueries(readmodel.NewItemReader(gearDB), photos),
+		closers:       []func() error{db.Close, gearDB.Close},
+	}, nil
+}
+
+// OIDCDeps は本番アダプタで組み立てる。認可は 4.x 時点でも localauthz のまま
+// （gear の ReBAC は未使用。必要になったら photo と同様 authzhttp へ差し替える）。
+func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
+	authn, err := oidcauthn.New(ctx, cfg.OIDCIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("oidcauthn: %w", err)
+	}
+	if cfg.M2M.TokenURL == "" || cfg.M2M.ClientSecret == "" {
+		return nil, fmt.Errorf("photo internal を呼ぶ M2M 資格情報が未設定（M2M_TOKEN_URL / M2M_CLIENT_SECRET）")
+	}
+	gearDB, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("gear db: %w", err)
+	}
+	ts := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, cfg.M2M.Scopes...)
+	photos, err := photocatalog.New(cfg.PhotoInternalURL, httpclient.Client(ts))
+	if err != nil {
+		return nil, fmt.Errorf("photocatalog: %w", err)
+	}
+	return &Deps{
+		Authenticator: authn,
+		Assurance:     simpleassurance.New(),
+		Commands:      usecase.NewItemCommands(consistency.NewAtomic(gearDB), repository.NewItemRepository(gearDB)),
+		Queries:       usecase.NewItemQueries(readmodel.NewItemReader(gearDB), photos),
+		closers:       []func() error{gearDB.Close},
 	}, nil
 }
 
@@ -120,8 +200,14 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	}
 	base := httpapi.Options{Service: "gear", Version: Version, Authenticator: authn}
 
-	ext := httpapi.New(httpapi.External, base)
-	external.Register(ext, external.Deps{Authorizer: azr, Lister: lister, Assurance: assurance})
+	ext := httpapi.New(httpapi.External, base) // v1 は New が作る（AddMajor は 2 以降）
+	if deps != nil {
+		external.Register(ext.Huma, external.Deps{Commands: deps.Commands, Queries: deps.Queries})
+	} else {
+		external.Register(ext.Huma, external.Deps{})
+	}
+	_ = azr
+	_ = lister
 
 	adm := httpapi.New(httpapi.Admin, base)
 	admin.Register(adm, admin.Deps{Assurance: assurance})
@@ -141,7 +227,13 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 
 // Run は3リスナーを起動し、ctxのキャンセルまたはいずれかのリスナーの失敗で全て停止する。
 func Run(ctx context.Context, cfg Config) error {
-	deps, err := LocalDeps(cfg)
+	// OIDC_ISSUER の有無で配線を選ぶ（photo と同じ規約）。LocalDeps 側は staticauthn が
+	// runtimeenv の許可リストで守られているので、本番で誤って選べば起動で落ちる
+	build := LocalDeps
+	if cfg.OIDCIssuer != "" {
+		build = OIDCDeps
+	}
+	deps, err := build(ctx, cfg)
 	if err != nil {
 		return err
 	}
