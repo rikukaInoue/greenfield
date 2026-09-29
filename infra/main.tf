@@ -202,6 +202,9 @@ locals {
     { name = "FLAGS_SOURCE", value = "file" },
     { name = "FLAGS_FILE", value = "/etc/greenfield/flags.json" },
     { name = "DEPLOY_MARKER", value = var.deploy_marker },
+    # 7.2b(#175): どの版が応答したかの観測口(ローカル予行 #172 と同じ)と、壊れた版の再現
+    { name = "SERVICE_REVISION", value = var.deploy_marker },
+    { name = "PHOTO_FAULT", value = var.photo_fault },
   ]
 }
 
