@@ -1,0 +1,33 @@
+# Tier 2 のホストベースルーティング(internal-07 / #55)。
+#
+# *.localhost はブラウザがループバックへ解決する(RFC 6761)ので /etc/hosts は不要。
+# ホストの curl から叩くときだけ --resolve auth.localhost:80:127.0.0.1 を付ける。
+#
+# 罠(#55 実測): **curl 8.x は *.localhost を DNS を無視してループバックへ解決する**
+# (RFC 6761 を curl 自身が実装している)。このため「コンテナ内から curl で
+# auth.localhost を叩く」検証は network alias を素通りして自分自身に繋がり、
+# 別サービスの 401 が返って混乱する。コンテナ内からの疎通確認は
+#   curl -H "Host: auth.localhost" http://<caddyのIP>/...
+# の形で行う。Go の net はこの特殊扱いをしないので、アプリ本体(oidcauthn の
+# discovery / JWKS 取得)は alias 経由で正しく Caddy に届く(起動成功が証跡)。
+#
+# issuer 整合がこの Tier の存在理由: コンテナ側は compose の network alias で
+# auth.localhost がこの Caddy に解決され、ブラウザ側はループバック:80 で同じ Caddy に
+# 着く。両側から**同じ名前**で Keycloak に到達するので issuer を
+# http://auth.localhost/realms/greenfield の1つに固定できる。
+#
+# http:// 明示で Caddy の自動 TLS を切る(TLS が要る検証だけ mkcert を配る。internal-07)。
+
+http://auth.localhost {
+	# Host ヘッダはそのまま転送される(reverse_proxy の既定)。Keycloak(start-dev、
+	# hostname 動的)は受けた Host から issuer を組むので、iss が auth.localhost になる
+	reverse_proxy keycloak:8080
+}
+
+http://photo.api.localhost {
+	reverse_proxy photo:8080
+}
+
+http://gear.api.localhost {
+	reverse_proxy gear:8090
+}
