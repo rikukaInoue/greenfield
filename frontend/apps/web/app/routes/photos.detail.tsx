@@ -1,7 +1,7 @@
 import { ApiError, unwrap } from "@greenfield/api-core/server";
 import { data, Form, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/photos.detail";
-import { photoClientContext } from "../context";
+import { gearClientContext, photoClientContext } from "../context";
 import { toRouteError } from "../.server/errors";
 import { formatDate, PhotoImage, VisibilityBadge } from "../components";
 
@@ -16,9 +16,24 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
   // fresh は自分の書き込み直後に Read Model の遅れを踏まないためのヒント。
   const fresh = new URL(request.url).searchParams.get("fresh") === "1";
   const api = context.get(photoClientContext);
+  const gear = context.get(gearClientContext);
   try {
     const photo = await unwrap(api.GET("/v2/photos/{id}", { params: { path: { id }, query: { fresh } } }));
-    return { photo };
+    // loader 合成: 使用機材は gear API から引く（正は gear。photo は ID を値として持つだけ）。
+    // 機材が引けなくても写真は見せる——表示の付加情報の欠落で本体を道連れにしない
+    // （4.1 の作例併合が「詳細ごと失敗」なのは、空と失敗の区別が必要だったから。ここは逆）
+    let gearItem = null;
+    if (photo.gear_item_id != null) {
+      try {
+        const detail = await unwrap(
+          gear.GET("/items/{id}", { params: { path: { id: photo.gear_item_id } } }),
+        );
+        gearItem = { id: detail.id, name: detail.name, maker: detail.maker ?? "" };
+      } catch {
+        gearItem = null;
+      }
+    }
+    return { photo, gearItem };
   } catch (err) {
     toRouteError(err, request);
   }
@@ -59,11 +74,21 @@ export default function PhotoDetail({ loaderData, actionData }: Route.ComponentP
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           <dt className="text-stone-500">投稿者</dt>
           <dd>{photo.owner_id}</dd>
-          {/*
-            機材名（gear_name）の表示はここにあったが、API が値を返したことは
-            一度も無く、条件が真になる経路が存在しなかった。ReplicaView の実装が
-            できたら契約と一緒に戻す（監査 E / #91）。
-          */}
+          {loaderData.gearItem && (
+            <>
+              <dt className="text-stone-500">使用機材</dt>
+              <dd>
+                {loaderData.gearItem.maker && `${loaderData.gearItem.maker} `}
+                {loaderData.gearItem.name}
+                {photo.gear_link_status === "pending" && (
+                  <span className="ml-2 text-xs text-amber-600">（紐付け確認中）</span>
+                )}
+                {photo.gear_link_status === "rejected" && (
+                  <span className="ml-2 text-xs text-red-600">（紐付けできませんでした）</span>
+                )}
+              </dd>
+            </>
+          )}
           {photo.size_bytes != null && (
             <>
               <dt className="text-stone-500">サイズ</dt>

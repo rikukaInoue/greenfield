@@ -10,11 +10,17 @@ function safeReturnTo(v: string | null): string {
 }
 
 export function loader({ request }: Route.LoaderArgs) {
-  if (!env.devLogin) throw data("dev login is disabled", { status: 404 });
   const url = new URL(request.url);
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"));
+  // OIDC が構成されていて dev ログインが無効なら、選択肢は無いので直接 Keycloak へ
+  if (env.oidc && !env.devLogin) {
+    throw redirect(`/auth/login?${new URLSearchParams({ returnTo })}`);
+  }
+  if (!env.devLogin) throw data("dev login is disabled", { status: 404 });
   return {
-    returnTo: safeReturnTo(url.searchParams.get("returnTo")),
+    returnTo,
     stepUp: url.searchParams.get("aal") === "2",
+    oidc: Boolean(env.oidc),
   };
 }
 
@@ -28,6 +34,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const session = await sessionStorage.getSession(request.headers.get("Cookie"));
   session.set("accessToken", mintDevToken({ sub: subject, aal }));
+  session.set("expiresAt", 0); // devtoken は期限管理しない
   session.set("subject", subject);
   session.set("aal", aal);
   return redirect(safeReturnTo(String(form.get("returnTo"))), {
@@ -40,8 +47,16 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
     <div className="mx-auto max-w-sm">
       <h1 className="text-xl font-semibold">開発用ログイン</h1>
       <p className="mt-1 text-sm text-stone-500">
-        devtoken を発行してセッションに保存します。Keycloak 配線までの暫定です。
+        devtoken を発行してセッションに保存します（開発環境のみ）。
       </p>
+      {loaderData.oidc && (
+        <a
+          href={`/auth/login?${new URLSearchParams({ returnTo: loaderData.returnTo })}`}
+          className="mt-4 block w-full rounded bg-stone-900 px-3 py-2 text-center text-white dark:bg-stone-100 dark:text-stone-900"
+        >
+          Keycloak でログイン
+        </a>
+      )}
       {loaderData.stepUp && (
         <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
           この操作には再認証（AAL2）が必要です。

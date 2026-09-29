@@ -171,6 +171,9 @@ importers:
       '@greenfield/api-core':
         specifier: workspace:*
         version: link:../../packages/api-core
+      '@greenfield/gear-api':
+        specifier: workspace:*
+        version: link:../../packages/gear-api
       '@greenfield/photo-api':
         specifier: workspace:*
         version: link:../../packages/photo-api
@@ -230,6 +233,15 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.13.6
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/gear-api:
+    devDependencies:
+      openapi-typescript:
+        specifier: ^7.13.0
+        version: 7.13.0(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

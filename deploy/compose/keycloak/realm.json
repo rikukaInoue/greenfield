@@ -870,10 +870,14 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "ssr-dev-secret",
       "redirectUris": [
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "http://localhost:5173/*",
+        "http://localhost:3001/*"
       ],
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:3001"
       ],
       "notBefore": 0,
       "bearerOnly": false,

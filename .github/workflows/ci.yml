@@ -485,13 +485,34 @@ jobs:
             echo "$url が起動しない" >&2; exit 1
           done
 
-      - name: ブラウザ E2E（投稿の3段 / #17 トークン非露出・CORS 閉）
+      # --- OIDC 経路（5.2）: confidential client の実 Keycloak ログインを別インスタンスで検証する ---
+      - name: Keycloak / OpenFGA / authz / photo(OIDC) / SSR(OIDC) を起動する
+        run: |
+          docker run -d --name keycloak --network host             -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin             -e KC_HTTP_PORT=8180             -v "$PWD/deploy/compose/keycloak:/opt/keycloak/data/import:ro"             quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+          mysql -h 127.0.0.1 -P 13306 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS openfga; CREATE USER IF NOT EXISTS 'openfga'@'%' IDENTIFIED BY 'openfga'; GRANT ALL PRIVILEGES ON openfga.* TO 'openfga'@'%'; FLUSH PRIVILEGES;"
+          docker run --rm --network host -e OPENFGA_DATASTORE_ENGINE=mysql             -e OPENFGA_DATASTORE_URI="openfga:openfga@tcp(127.0.0.1:13306)/openfga?parseTime=true"             openfga/openfga:v1.8 migrate
+          docker run -d --name openfga --network host -e OPENFGA_DATASTORE_ENGINE=mysql             -e OPENFGA_DATASTORE_URI="openfga:openfga@tcp(127.0.0.1:13306)/openfga?parseTime=true"             -e OPENFGA_HTTP_ADDR=0.0.0.0:8280 -e OPENFGA_PLAYGROUND_ENABLED=false openfga/openfga:v1.8 run
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:8180/realms/greenfield && break
+            sleep 3
+          done
+          ( cd platform/authz && GOWORK=off             OIDC_ISSUER=http://localhost:8180/realms/greenfield             OPENFGA_URL=http://localhost:8280 AUTHZ_ADDR=:8101             go run ./cmd/authz > "$RUNNER_TEMP/authz.log" 2>&1 & )
+          ( cd services/photo && GOWORK=off             OIDC_ISSUER=http://localhost:8180/realms/greenfield             AUTHZ_URL=http://localhost:8101             M2M_TOKEN_URL=http://localhost:8180/realms/greenfield/protocol/openid-connect/token             M2M_CLIENT_SECRET=svc-photo-dev-secret             GEAR_INTERNAL_URL=http://localhost:18091             AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=testtest AWS_REGION=us-east-1             AWS_ENDPOINT_URL=http://localhost:9000 PHOTO_IMAGE_BUCKET=photo-images             PHOTO_EXTERNAL_ADDR=:18080 PHOTO_INTERNAL_ADDR=:18081 PHOTO_ADMIN_ADDR=:18082             go run ./cmd/photo > "$RUNNER_TEMP/photo-oidc.log" 2>&1 & )
+          ( cd frontend/apps/web && PORT=3001 ENV=ci DEV_LOGIN=false             OIDC_ISSUER=http://localhost:8180/realms/greenfield             PHOTO_API_URL=http://localhost:18080 GEAR_API_URL=http://localhost:18090             SESSION_DIR="$RUNNER_TEMP/ssr-sessions"             nohup pnpm start > "$RUNNER_TEMP/web-oidc.log" 2>&1 & )
+          for url in http://localhost:18080/healthz http://localhost:3001/login; do
+            for i in $(seq 1 90); do curl -sf -o /dev/null "$url" && continue 2; sleep 2; done
+            echo "$url が起動しない" >&2; exit 1
+          done
+
+      - name: ブラウザ E2E（投稿の3段 / #17 トークン非露出・CORS 閉 / OIDC ログイン）
         timeout-minutes: 10
         run: mise run --quiet web:e2e
+        env:
+          OIDC_WEB_URL: http://localhost:3001
 
       - name: E2E のサーバーログ
         if: failure()
-        run: tail -n 200 "$RUNNER_TEMP/allinone.log" "$RUNNER_TEMP/web.log"
+        run: tail -n 200 "$RUNNER_TEMP/allinone.log" "$RUNNER_TEMP/web.log" "$RUNNER_TEMP/web-oidc.log" "$RUNNER_TEMP/photo-oidc.log" "$RUNNER_TEMP/authz.log" 2>/dev/null || true
 
       - name: E2E のトレースを保存する
         if: failure()

@@ -316,6 +316,7 @@ depends = ["web:install"]
 dir = "frontend"
 run = [
   "pnpm --filter @greenfield/photo-api gen:check",
+  "pnpm --filter @greenfield/gear-api gen:check",
   "pnpm typecheck",
   "pnpm --filter @greenfield/web test:unit",
   "pnpm build",
