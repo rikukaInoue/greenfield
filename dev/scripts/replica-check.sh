@@ -51,14 +51,6 @@ start_bg() { # start_bg <logfile> <env...> <cmd...> — exec で子を作らず�
 
 replica_count() { ${MYSQL} -N gear -e "SELECT COUNT(*) FROM photo_replica;" 2>/dev/null; }
 fingerprint()   { gear replica-status | grep -o 'fingerprint=.*' | cut -d= -f2; }
-wait_count() { # wait_count <expected> [tries]
-  local want=$1 tries=${2:-30}
-  for i in $(seq 1 "$tries"); do
-    [ "$(replica_count)" = "$want" ] && return 0
-    sleep 1
-  done
-  return 1
-}
 
 # 前回の痕跡を消す（イベントIDは実行のたびに新しいので inbox はそのままでよい）
 ${MYSQL} photo -e "DELETE FROM outbox WHERE aggregate_id LIKE 'photo:91%';" >/dev/null 2>&1
@@ -79,17 +71,23 @@ INSERT INTO outbox (event_id, event_type, aggregate_id, payload) VALUES
 ('${E3}', 'photo.published', 'photo:91003', JSON_OBJECT('id', 91003, 'caption', 'no-gear', 'owner_id', 'chk', 'object_key', '', 'created_at', '2026-09-29T00:00:03.000000Z')),
 ('${E4}', 'photo.deleted',   'photo:91002', JSON_OBJECT('id', 91002));
 SQL
-BASE=$(replica_count)
-
 start_bg "$tmp/relay.log" RELAY_INTERVAL=1s "$PHOTO_BIN" relay
 start_bg "$tmp/consume.log" "$GEAR_BIN" consume
 
-# 期待: +1（91001 だけ残る。91002 は消され、91003 は機材なしで入らない）
-if wait_count "$((BASE + 1))"; then
-  CAPTIONS=$(${MYSQL} -N gear -e "SELECT caption FROM photo_replica WHERE photo_id >= 91001;" 2>/dev/null)
-  [ "$CAPTIONS" = "replica-check-1" ] && ok "published が入り、deleted は消え、機材なしは入らない" || ng "複製の中身: [$CAPTIONS]"
+# 期待: 91001 だけ残る（91002 は消され、91003 は機材なしで入らない）。
+# **件数で待たない**: 順序保証は同一集約内だけで、集約を跨ぐ適用順は不定。
+# pub(91002) が先に入り delete(91002) で消える途中状態を件数が掴むと誤判定になる
+# （CI で実際に踏んだ）。最終状態の内容そのものを待つ
+CAPTIONS=""
+for i in $(seq 1 30); do
+  CAPTIONS=$(${MYSQL} -N gear -e "SELECT caption FROM photo_replica WHERE photo_id >= 91001 ORDER BY photo_id;" 2>/dev/null)
+  [ "$CAPTIONS" = "replica-check-1" ] && break
+  sleep 1
+done
+if [ "$CAPTIONS" = "replica-check-1" ]; then
+  ok "published が入り、deleted は消え、機材なしは入らない"
 else
-  ng "複製が期待の行数にならない: $(replica_count) (期待 $((BASE + 1))): $(tail -3 "$tmp/consume.log")"
+  ng "複製の中身: [$CAPTIONS]: $(tail -3 "$tmp/consume.log")"
 fi
 
 echo
