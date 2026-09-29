@@ -33,6 +33,7 @@ import (
 	"github.com/rikukaInoue/greenfield/services/photo/readmodel"
 	"github.com/rikukaInoue/greenfield/services/photo/repository"
 	"github.com/rikukaInoue/greenfield/services/photo/usecase"
+	"github.com/rikukaInoue/greenfield/telemetry"
 )
 
 // Version / VersionV2 は各メジャーの info.version。既存のメジャーへ破壊的変更は入れず、
@@ -65,6 +66,8 @@ type Config struct {
 	ExternalAddr string
 	InternalAddr string
 	AdminAddr    string
+	// MetricsAddr は /metrics の待ち受け(例 :9091)。空なら公開しない(#59)
+	MetricsAddr string
 	// DSN は photo の業務データ。アプリ実行用のユーザーで接続する。
 	DSN string
 	// LocalAuthzDSN は擬似ReBAC のタプル置き場。サービスのDBとは別。
@@ -94,6 +97,7 @@ type M2MConfig struct {
 // ConfigFromEnv は環境変数から設定を読む。
 func ConfigFromEnv() Config {
 	return Config{
+		MetricsAddr:   os.Getenv("METRICS_ADDR"),
 		ExternalAddr:  envOr("PHOTO_EXTERNAL_ADDR", ":8080"),
 		InternalAddr:  envOr("PHOTO_INTERNAL_ADDR", ":8081"),
 		AdminAddr:     envOr("PHOTO_ADMIN_ADDR", ":8082"),
@@ -119,6 +123,10 @@ type Deps struct {
 	Flags         *flags.Evaluator
 	Commands      *usecase.PhotoCommands
 	Queries       *usecase.PhotoQueries
+
+	// DB は業務データのプール。合成ルートが昇格シグナル(プール使用率)の観測に使う(#59)。
+	// usecase / handler はこれに触れない(触りたくなったら repository/readmodel の仕事)
+	DB *sql.DB
 
 	closers []func() error
 }
@@ -163,6 +171,7 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		Commands: usecase.NewPhotoCommands(
 			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
+		DB:      db,
 		closers: []func() error{db.Close, authzDB.Close},
 	}, nil
 }
@@ -199,6 +208,7 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		Commands: usecase.NewPhotoCommands(
 			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
+		DB:      db,
 		closers: []func() error{db.Close},
 	}, nil
 }
@@ -254,6 +264,35 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer deps.Close()
+
+	// 昇格シグナルのメトリクス(#59)。契約(OpenAPI)や認証の面と混ぜないため専用ポート。
+	// METRICS_ADDR 未設定なら出さない(テスト・スペック生成で余計なリスナーを立てない)
+	if cfg.MetricsAddr != "" {
+		reg := telemetry.New("photo")
+		reg.ObservePool("photo", deps.DB)
+		// outbox 滞留(4.2)。未送信の件数と最古の滞留秒。relay が止まる/追いつかない、の
+		// 両方がここに出る(check #8 で実測した「relay 停止中は未送信で残る」の常時監視版)。
+		// 読めないときは -1(0=滞留なし と 欠測 を混同しない。telemetry.ObserveGauge の規約)
+		reg.ObserveGauge("outbox_pending", "未送信イベント数(published_at IS NULL)", func(ctx context.Context) float64 {
+			var n float64
+			if err := deps.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM outbox WHERE published_at IS NULL").Scan(&n); err != nil {
+				return -1
+			}
+			return n
+		})
+		reg.ObserveGauge("outbox_oldest_age_seconds", "最古の未送信イベントの経過秒(滞留なしは 0)", func(ctx context.Context) float64 {
+			var age sql.NullFloat64
+			if err := deps.DB.QueryRowContext(ctx,
+				"SELECT TIMESTAMPDIFF(MICROSECOND, MIN(created_at), NOW(6))/1e6 FROM outbox WHERE published_at IS NULL").Scan(&age); err != nil {
+				return -1
+			}
+			if !age.Valid {
+				return 0
+			}
+			return age.Float64
+		})
+		reg.Serve(ctx, cfg.MetricsAddr)
+	}
 	return RunWith(ctx, cfg, deps)
 }
 

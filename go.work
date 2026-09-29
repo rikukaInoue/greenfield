@@ -1,12 +1,13 @@
-go 1.26.0
+go 1.26.1
 
 use (
 	./core
 	./dev
-	./services/photo
-	./services/photo-client
+	./platform/authz
 	./services/gear
 	./services/gear-client
-	./platform/authz
-	// scaffold:use
+	./services/photo
+	./services/photo-client
+	./telemetry
+// scaffold:use
 )

@@ -38,6 +38,7 @@ services:
       ENV: dev
       LOG_LEVEL: ${LOG_LEVEL:-}
       AUTHZ_ADDR: ":8100"
+      METRICS_ADDR: ":9093"
       OPENFGA_URL: "http://openfga:8080"
       # issuer は統一名。JWKS の取得も alias 経由で Caddy → Keycloak に届く
       OIDC_ISSUER: "http://auth.localhost/realms/greenfield"

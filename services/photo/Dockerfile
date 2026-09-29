@@ -9,9 +9,11 @@ WORKDIR /src
 # 依存の解決だけ先に。go.sum が変わらない限りこの層は再利用される
 COPY core/go.mod core/go.sum ./core/
 COPY services/photo/go.mod services/photo/go.sum ./services/photo/
+COPY telemetry/go.mod telemetry/go.sum ./telemetry/
 COPY services/photo-client/go.mod ./services/photo-client/
 RUN cd services/photo && GOWORK=off go mod download
 COPY core ./core
+COPY telemetry ./telemetry
 COPY services/photo ./services/photo
 COPY services/photo-client ./services/photo-client
 RUN cd services/photo && GOWORK=off CGO_ENABLED=0 go build -trimpath -o /out/photo ./cmd/photo

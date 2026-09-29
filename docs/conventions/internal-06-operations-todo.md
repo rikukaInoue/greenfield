@@ -35,9 +35,21 @@
 
 **既知の例外: flagdのログは寄せられない**（flagd v0.7.0）。`flagd.WithLogger(logr.Logger)` は**rpcリゾルバにしか渡らず**、我々が使うin-processリゾルバ（ADR 0013）は `NewInProcessService` が無条件に自前のzapロガーを作る（`process.Configuration` に渡す口が無い。`in_process/service.go:145`、sinkは `os.Stderr` 固定・レベルInfo固定）。結果としてflagdは `{"level":"info","ts":...}` をstderrへ、アプリは `{"time":"...Z","level":"INFO",...}` をstdoutへ出す。**1形式に揃える方針の唯一の例外**であり、上流がin-process側にロガーを通すまで直せない。`WithLogger` を渡す配線は**あえて入れていない**（我々の経路ではno-opで、「書いてあるが効いていない」コードを増やすだけになる）。
 
-#### トレース・メトリクス（TBD）
+#### メトリクス（確定。#59 で実装）
 
-上のログ規約が `trace_id` / `span_id` を既に持つので、[6.1]（#59）でOTel SDKを入れる時は `core/middleware.Correlate` を手書きの伝播からSDKのpropagatorへ差し替える。OTel SDKをcoreへ入れないのは、全利用者がexporterとその依存を抱えることになるため（いま要るのは「ヘッダ形式を守って引き継ぐ」ことだけ）。メトリクスは未着手。
+昇格シグナル3種を Prometheus 形式で公開する。計測コードは `telemetry/`（**core とは別モジュール**。core に入れると全利用者が prometheus クライアントの依存を抱える）に置き、使ってよいのは各サービスの合成ルートのみ。`/metrics` は契約・認証の面と混ぜず**専用ポート**（`METRICS_ADDR`。未設定なら出さない）。観測スタックは `mise run obs:up`（prometheus + grafana、ダッシュボード `昇格シグナル` は git 管理でレビューに載せる）。
+
+| シグナル | メトリクス | 何の合図か |
+|---|---|---|
+| プール使用率 | `db_pool_in_use / open / max / wait_total` | 接続の飽和 → インスタンス分離・プール見直し |
+| authz レイテンシ | `http_server_request_duration_seconds`（authz） | 認可の往復が高い → キャッシュ・配置の見直し |
+| outbox 滞留 | `outbox_pending` / `outbox_oldest_age_seconds` | relay が追いつかない → 配送の並列化・バス見直し |
+
+SQL 由来の gauge は「読めない」を **-1** で返す（0=滞留なし と 欠測 を混同しない。fail open にしない）。
+
+#### トレース（TBD）
+
+上のログ規約が `trace_id` / `span_id` を既に持つので、OTel SDKを入れる時は `core/middleware.Correlate` を手書きの伝播からSDKのpropagatorへ差し替える。OTel SDKをcoreへ入れないのは、全利用者がexporterとその依存を抱えることになるため（いま要るのは「ヘッダ形式を守って引き継ぐ」ことだけ）。otel-collector + jaeger（02-architecture）はこのタイミングで立てる。
 
 <!-- 10.2 は internal/05-database.md へ分離済み -->
 

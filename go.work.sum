@@ -1,1 +1,2 @@
 google.golang.org/genproto v0.0.0-20260630182238-925bb5da69e7 h1:lQG76ePMKmtujel4VIVMiFoHVWVNtJdawbCZJtWlVXU=
+google.golang.org/protobuf v1.33.0/go.mod h1:c6P6GXX6sHbq/GpV6MGZEdwhWPcYBgnhAHhKbcUYpos=

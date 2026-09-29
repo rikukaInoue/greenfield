@@ -22,6 +22,7 @@ import (
 
 	"github.com/rikukaInoue/greenfield/platform/authz"
 	"github.com/rikukaInoue/greenfield/platform/authz/fga"
+	"github.com/rikukaInoue/greenfield/telemetry"
 )
 
 func main() {
@@ -48,6 +49,14 @@ func run() error {
 		return fmt.Errorf("ensure model: %w", err)
 	}
 	var handler http.Handler = authz.NewServer(client, authz.DefaultMapping)
+
+	// 昇格シグナル: authz レイテンシ(#59)。認可の往復に払っている時間を面ごとに測る。
+	// /metrics は契約・認証の面と混ぜず専用ポート(未設定なら出さない)
+	if maddr := os.Getenv("METRICS_ADDR"); maddr != "" {
+		reg := telemetry.New("authz")
+		handler = reg.HTTPLatency("internal")(handler)
+		reg.Serve(ctx, maddr)
+	}
 	// サービス間認証。プライベートネットワークを理由とした無認証は試作でも採らない
 	// （docs/03-platform.md）。OIDC_ISSUER が無い起動は開発用の許可リスト環境のみ許す。
 	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
