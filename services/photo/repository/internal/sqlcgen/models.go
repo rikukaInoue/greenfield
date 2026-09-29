@@ -7,6 +7,7 @@ package sqlcgen
 import (
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -93,6 +94,26 @@ func (ns NullPhotosVisibility) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.PhotosVisibility), nil
+}
+
+// 送信予定のイベント。業務データと同一 tx で INSERT（再生の正でもある）
+type Outbox struct {
+	ID uint64
+	// 送信側が採番。受信側 inbox とバスの MessageDeduplicationId で使う
+	EventID string
+	// 例: photo.published
+	EventType string
+	// 例: photo:123。バスの MessageGroupId（集約内順序）
+	AggregateID string
+	Payload     json.RawMessage
+	CreatedAt   time.Time
+	// NULL = 未送信。relay が送信成功後に記録
+	PublishedAt sql.NullTime
+	Attempts    int32
+	// 指数バックオフの次回試行時刻
+	NextAttemptAt sql.NullTime
+	// 上限超過はエラー状態として残す（削除しない。監視対象）
+	LastError sql.NullString
 }
 
 type Photo struct {

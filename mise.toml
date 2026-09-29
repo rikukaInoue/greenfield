@@ -141,17 +141,22 @@ run = '[ -n "${CI:-}" ] || docker compose up -d --wait mysql'
 description = "オブジェクトストレージ（RustFS）を起動しバケットを用意する。CI では起動済みとみなす"
 run = ['[ -n "${CI:-}" ] || docker compose up -d --wait rustfs', 'go run ./dev/s3admin ensure-buckets']
 
+[tasks."events:up"]
+description = "イベントバス（LocalStack SNS/SQS）を起動しトピック・キューを用意する。CI では起動済みとみなす"
+run = ['[ -n "${CI:-}" ] || docker compose up -d --wait localstack', "go run ./dev/eventadmin ensure-topics"]
+
 [tasks."infra:up"]
-description = "ローカル依存を一括起動（mysql + RustFS + flagd + バケット + マイグレーション）"
+description = "ローカル依存を一括起動（mysql + RustFS + flagd + LocalStack + バケット + トピック + マイグレーション）"
 # depends は並行実行される。docker compose を同時に呼ぶと同一プロジェクトのネットワーク作成で
 # 競合するため（Network ... already exists）、1回の compose 呼び出しにまとめる
 run = [
   # flagd は healthcheck を書けないため --wait の対象にできない。起動だけ同じ呼び出しで行い、
   # 到達性はホスト側の TCP プローブで待つ
-  "docker compose up -d --wait mysql rustfs",
+  "docker compose up -d --wait mysql rustfs localstack",
   "docker compose up -d flagd",
   "dev/scripts/wait-for-flagd.sh",
   "go run ./dev/s3admin ensure-buckets",
+  "go run ./dev/eventadmin ensure-topics",
   'for s in $(mise run services); do n=$(basename $s); echo "== $n expand"; go run ./$s/cmd/$n migrate expand || exit 1; done',
   'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]

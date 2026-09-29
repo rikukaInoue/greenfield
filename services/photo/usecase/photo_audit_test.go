@@ -86,7 +86,7 @@ func TestCommitUploadKeepsStorageOutOfTransaction(t *testing.T) {
 	tx := &txTracker{}
 	images := &txAwareImages{stubImages: &stubImages{}, tx: tx}
 	authorizer := &stubAuthorizer{allow: map[string]bool{usecase.ActionEdit: true}}
-	cmds := usecase.NewPhotoCommands(tx, repo, images, authorizer, &stubRelations{}, nil)
+	cmds := usecase.NewPhotoCommands(tx, repo, images, authorizer, &stubRelations{}, sinkEventual{}, nil)
 
 	p := newOwnedPhoto(t, repo, "alice")
 	ctx := authz.WithPrincipal(context.Background(), authz.Principal{Subject: "alice", Kind: authz.PrincipalUser})
@@ -109,7 +109,7 @@ func TestCommitUploadWithoutObjectStaysPending(t *testing.T) {
 	tx := &txTracker{}
 	images := &txAwareImages{stubImages: &stubImages{statErr: usecase.ErrObjectNotFound}, tx: tx}
 	authorizer := &stubAuthorizer{allow: map[string]bool{usecase.ActionEdit: true}}
-	cmds := usecase.NewPhotoCommands(tx, repo, images, authorizer, &stubRelations{}, nil)
+	cmds := usecase.NewPhotoCommands(tx, repo, images, authorizer, &stubRelations{}, sinkEventual{}, nil)
 
 	p := newOwnedPhoto(t, repo, "alice")
 	ctx := authz.WithPrincipal(context.Background(), authz.Principal{Subject: "alice", Kind: authz.PrincipalUser})
@@ -130,7 +130,7 @@ func TestDeleteByOwnerRemovesObjectsAndTuples(t *testing.T) {
 	images := &txAwareImages{stubImages: &stubImages{}, tx: tx}
 	relations := &stubRelations{}
 	authorizer := &stubAuthorizer{allow: map[string]bool{usecase.ActionOperate: true}}
-	cmds := usecase.NewPhotoCommands(tx, repo, images, authorizer, relations, nil)
+	cmds := usecase.NewPhotoCommands(tx, repo, images, authorizer, relations, sinkEventual{}, nil)
 
 	alice := newOwnedPhoto(t, repo, "alice")
 	_ = newOwnedPhoto(t, repo, "bob") // 他人の写真は残る
@@ -169,7 +169,7 @@ func TestDeleteByOwnerRequiresOperator(t *testing.T) {
 	relations := &stubRelations{}
 	// owner 相当の権限だけある主体(operator ではない)
 	authorizer := &stubAuthorizer{allow: map[string]bool{usecase.ActionEdit: true}}
-	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, repo, images, authorizer, relations, nil)
+	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, repo, images, authorizer, relations, sinkEventual{}, nil)
 
 	newOwnedPhoto(t, repo, "alice")
 	ctx := authz.WithPrincipal(context.Background(), authz.Principal{Subject: "alice", Kind: authz.PrincipalUser})
