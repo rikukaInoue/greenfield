@@ -13,24 +13,28 @@ export type Problem = {
 };
 
 // ApiError は API がエラーを返したことを表す。
+// parameter property を使わないのは node --test の型ストリップ(strip-only)が
+// その構文を読めず、このファイルを import するテストが書けなくなるため(#156)。
 export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly problem: Problem,
-  ) {
+  readonly status: number;
+  readonly problem: Problem;
+  constructor(status: number, problem: Problem) {
     super(problem.detail ?? problem.title ?? problem.code);
     this.name = "ApiError";
+    this.status = status;
+    this.problem = problem;
   }
 }
 
 // StepUpRequired は insufficient_user_authentication を受けたことを表す。呼び手は再認証へ誘導する。
 export class StepUpRequired extends Error {
-  constructor(
-    readonly acrValues?: string,
-    readonly maxAge?: number,
-  ) {
+  readonly acrValues?: string;
+  readonly maxAge?: number;
+  constructor(acrValues?: string, maxAge?: number) {
     super("step-up authentication required");
     this.name = "StepUpRequired";
+    this.acrValues = acrValues;
+    this.maxAge = maxAge;
   }
 }
 
@@ -39,7 +43,13 @@ export type ServerClientOptions = {
   // accessToken は呼び出しごとに評価される。
   accessToken: () => string | undefined;
   requestId?: string;
+  // traceparent は W3C Trace Context。newTraceContext() で作った値を渡すと
+  // 全 API 呼び出しに付き、1画面の呼び出し群が同じ trace-id で繋がる(#156)。
+  // API 側(core/middleware.Correlate)は受信した span を親として自分の span を新規採番する。
+  traceparent?: string;
 };
+
+export { newTraceContext } from "./trace.ts";
 
 const mutating = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -51,6 +61,7 @@ export function createServerClient<Paths extends {}>(opts: ServerClientOptions):
       const token = opts.accessToken();
       if (token) request.headers.set("Authorization", `Bearer ${token}`);
       request.headers.set("X-Request-Id", opts.requestId ?? randomUUID());
+      if (opts.traceparent) request.headers.set("traceparent", opts.traceparent);
       // **このヘッダは現時点で誰も読んでいない**（サーバ側に Idempotency-Key を読む Go コードは
       // 無く、`core/httpclient` も未実装。#138）。重複排除としてはまだ機能していない。
       //
