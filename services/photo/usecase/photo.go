@@ -44,6 +44,7 @@ type PhotoRepository interface {
 	DeleteByOwner(ctx context.Context, ownerSubject string) (int, error)
 	ListByOwner(ctx context.Context, ownerSubject string) ([]*domain.Photo, error)
 	ListStalePending(ctx context.Context, before time.Time, limit int) ([]*domain.Photo, error)
+	ListPendingGearLinks(ctx context.Context, before time.Time, limit int) ([]*domain.Photo, error)
 }
 
 // uploadTTL は署名URLの有効期限。
@@ -63,16 +64,17 @@ type PhotoCommands struct {
 	authorizer authz.Authorizer
 	relations  authz.RelationWriter
 	eventual   Eventual
+	gear       GearLink
 	// faults は検証用の失敗注入。本番では常に空。
 	faults FaultInjector
 }
 
 // NewPhotoCommands は PhotoCommands を組み立てる。
-func NewPhotoCommands(atomic Atomic, photos PhotoRepository, images ImageStore, authorizer authz.Authorizer, relations authz.RelationWriter, eventual Eventual, faults FaultInjector) *PhotoCommands {
+func NewPhotoCommands(atomic Atomic, photos PhotoRepository, images ImageStore, authorizer authz.Authorizer, relations authz.RelationWriter, eventual Eventual, gear GearLink, faults FaultInjector) *PhotoCommands {
 	if faults == nil {
 		faults = NoFaults{}
 	}
-	return &PhotoCommands{atomic: atomic, photos: photos, images: images, authorizer: authorizer, relations: relations, eventual: eventual, faults: faults}
+	return &PhotoCommands{atomic: atomic, photos: photos, images: images, authorizer: authorizer, relations: relations, eventual: eventual, gear: gear, faults: faults}
 }
 
 // CanCreate は主体が今投稿できるかを返す。Create と同じ判定を使う。
@@ -128,6 +130,13 @@ func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*Creat
 	if err != nil {
 		return nil, err
 	}
+	if in.GearItemID != nil {
+		// 使用機材の紐付けは同期コマンド（docs/02-architecture.md）。
+		// pending は業務データと同一 tx で確定し、コマンド自体は tx の外で送る
+		if err := photo.RequestGearLink(newLinkKey()); err != nil {
+			return nil, err
+		}
+	}
 
 	err = c.atomic.Do(ctx, func(ctx context.Context) error {
 		if err := c.photos.Create(ctx, photo); err != nil {
@@ -148,6 +157,9 @@ func (c *PhotoCommands) Create(ctx context.Context, in CreatePhotoInput) (*Creat
 	if err != nil {
 		return nil, err
 	}
+	// 紐付けコマンドは tx 外。届かなくても投稿は成立し、pending が回収ジョブに引き継がれる
+	c.tryLinkGear(ctx, photo)
+
 	upload, err := c.images.PresignPut(ctx, key, in.ContentType, uploadTTL)
 	if err != nil {
 		return nil, err

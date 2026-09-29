@@ -46,7 +46,7 @@ func TestPublishEmitsEvent(t *testing.T) {
 	id := readyPhoto(t, repo)
 	eventual := &captureEventual{}
 	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, repo, &stubImages{},
-		&stubAuthorizer{allow: map[string]bool{usecase.ActionPublish: true}}, &stubRelations{}, eventual, nil)
+		&stubAuthorizer{allow: map[string]bool{usecase.ActionPublish: true}}, &stubRelations{}, eventual, &stubGearLink{}, nil)
 
 	if _, err := cmds.Publish(context.Background(), id); err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestPublishFailsWhenEventualFails(t *testing.T) {
 	id := readyPhoto(t, repo)
 	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, repo, &stubImages{},
 		&stubAuthorizer{allow: map[string]bool{usecase.ActionPublish: true}}, &stubRelations{},
-		&captureEventual{err: errors.New("outbox down")}, nil)
+		&captureEventual{err: errors.New("outbox down")}, &stubGearLink{}, nil)
 
 	if _, err := cmds.Publish(context.Background(), id); err == nil {
 		t.Fatal("outbox への記録失敗が握りつぶされている")
@@ -86,7 +86,7 @@ func TestDeleteByOwnerEmitsDeletedEvents(t *testing.T) {
 	id := readyPhoto(t, repo)
 	eventual := &captureEventual{}
 	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, repo, &stubImages{},
-		&stubAuthorizer{allow: map[string]bool{usecase.ActionOperate: true}}, &stubRelations{}, eventual, nil)
+		&stubAuthorizer{allow: map[string]bool{usecase.ActionOperate: true}}, &stubRelations{}, eventual, &stubGearLink{}, nil)
 
 	n, err := cmds.DeleteByOwner(context.Background(), "alice-sub")
 	if err != nil || n != 1 {

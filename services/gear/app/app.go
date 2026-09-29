@@ -110,11 +110,20 @@ type Deps struct {
 	Assurance     authz.AssuranceChecker
 	Commands      *usecase.ItemCommands
 	Queries       *usecase.ItemQueries
+	Links         *usecase.LinkCommands
 
 	// DB は業務データのプール。合成ルートが昇格シグナル(プール使用率)の観測に使う(#59)
 	DB *sql.DB
 
 	closers []func() error
+}
+
+// LinksOrNil はスペック生成（deps が nil の経路）でも APIs を組めるようにする補助。
+func (d *Deps) LinksOrNil() *usecase.LinkCommands {
+	if d == nil {
+		return nil
+	}
+	return d.Links
 }
 
 // Close は保持している接続を閉じる。
@@ -163,6 +172,7 @@ func LocalDeps(_ context.Context, cfg Config) (*Deps, error) {
 		Commands:      usecase.NewItemCommands(consistency.NewAtomic(gearDB), repository.NewItemRepository(gearDB)),
 		Queries:       usecase.NewItemQueries(readmodel.NewItemReader(gearDB), photos),
 		DB:            gearDB,
+		Links:         usecase.NewLinkCommands(consistency.NewAtomic(gearDB), repository.NewLinkRepository(gearDB)),
 		closers:       []func() error{db.Close, gearDB.Close},
 	}, nil
 }
@@ -192,6 +202,7 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		Commands:      usecase.NewItemCommands(consistency.NewAtomic(gearDB), repository.NewItemRepository(gearDB)),
 		Queries:       usecase.NewItemQueries(readmodel.NewItemReader(gearDB), photos),
 		DB:            gearDB,
+		Links:         usecase.NewLinkCommands(consistency.NewAtomic(gearDB), repository.NewLinkRepository(gearDB)),
 		closers:       []func() error{gearDB.Close},
 	}, nil
 }
@@ -225,7 +236,7 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	intlOpts := base
 	intlOpts.RequireScope = InternalScope
 	intl := httpapi.New(httpapi.Internal, intlOpts)
-	internalapi.Register(intl, internalapi.Deps{Authorizer: azr, Lister: lister})
+	internalapi.Register(intl, internalapi.Deps{Links: deps.LinksOrNil()})
 
 	return map[httpapi.Listener]httpapi.API{
 		httpapi.External: ext,

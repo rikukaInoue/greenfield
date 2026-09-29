@@ -26,8 +26,11 @@ CREATE TABLE `photos` (
   `size_bytes` bigint unsigned DEFAULT NULL,
   `status` enum('pending_upload','ready') NOT NULL DEFAULT 'pending_upload',
   `title` varchar(1000) DEFAULT NULL,
+  `gear_link_status` varchar(16) DEFAULT NULL COMMENT 'pending / linked / rejected（NULL=要求なし）',
+  `gear_link_key` char(32) DEFAULT NULL COMMENT '紐付けコマンドの冪等キー（photo が採番）',
   PRIMARY KEY (`id`),
   KEY `idx_photos_owner` (`owner_subject`,`created_at`),
   KEY `idx_photos_status_created` (`status`,`created_at`),
+  KEY `idx_photos_gear_link` (`gear_link_status`,`id`),
   CONSTRAINT `chk_photos_ready_has_object` CHECK (((`status` <> _utf8mb4'ready') or (`object_key` is not null)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

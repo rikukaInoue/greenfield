@@ -128,4 +128,8 @@ type Photo struct {
 	SizeBytes    sql.NullInt64
 	Status       PhotosStatus
 	Title        sql.NullString
+	// pending / linked / rejected（NULL=要求なし）
+	GearLinkStatus sql.NullString
+	// 紐付けコマンドの冪等キー（photo が採番）
+	GearLinkKey sql.NullString
 }

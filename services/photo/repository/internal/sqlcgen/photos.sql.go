@@ -13,18 +13,20 @@ import (
 
 const createPhoto = `-- name: CreatePhoto :execresult
 
-INSERT INTO photos (owner_subject, title, visibility, gear_item_id, object_key, content_type, status)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO photos (owner_subject, title, visibility, gear_item_id, object_key, content_type, status, gear_link_status, gear_link_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreatePhotoParams struct {
-	OwnerSubject string
-	Title        sql.NullString
-	Visibility   PhotosVisibility
-	GearItemID   sql.NullInt64
-	ObjectKey    sql.NullString
-	ContentType  sql.NullString
-	Status       PhotosStatus
+	OwnerSubject   string
+	Title          sql.NullString
+	Visibility     PhotosVisibility
+	GearItemID     sql.NullInt64
+	ObjectKey      sql.NullString
+	ContentType    sql.NullString
+	Status         PhotosStatus
+	GearLinkStatus sql.NullString
+	GearLinkKey    sql.NullString
 }
 
 // コマンド側（Entity の復元・保存）のクエリ。参照できるのは自ドメイン（photo）のテーブルのみ。
@@ -37,6 +39,8 @@ func (q *Queries) CreatePhoto(ctx context.Context, arg CreatePhotoParams) (sql.R
 		arg.ObjectKey,
 		arg.ContentType,
 		arg.Status,
+		arg.GearLinkStatus,
+		arg.GearLinkKey,
 	)
 }
 
@@ -58,7 +62,7 @@ func (q *Queries) DeletePhotosByOwner(ctx context.Context, ownerSubject string) 
 }
 
 const getPhotoForUpdate = `-- name: GetPhotoForUpdate :one
-SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE id = ? FOR UPDATE
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title, gear_link_status, gear_link_key FROM photos WHERE id = ? FOR UPDATE
 `
 
 func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, error) {
@@ -76,12 +80,63 @@ func (q *Queries) GetPhotoForUpdate(ctx context.Context, id uint64) (Photo, erro
 		&i.SizeBytes,
 		&i.Status,
 		&i.Title,
+		&i.GearLinkStatus,
+		&i.GearLinkKey,
 	)
 	return i, err
 }
 
+const listPendingGearLinks = `-- name: ListPendingGearLinks :many
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title, gear_link_status, gear_link_key FROM photos
+WHERE gear_link_status = 'pending' AND created_at < ?
+ORDER BY id LIMIT ?
+`
+
+type ListPendingGearLinksParams struct {
+	CreatedAt time.Time
+	Limit     int32
+}
+
+// 回収ジョブ（4.4）: 紐付けが結果待ちのまま残った行。gear 停止中に作られたものが該当する
+func (q *Queries) ListPendingGearLinks(ctx context.Context, arg ListPendingGearLinksParams) ([]Photo, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingGearLinks, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Photo{}
+	for rows.Next() {
+		var i Photo
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerSubject,
+			&i.Visibility,
+			&i.GearItemID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ObjectKey,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Status,
+			&i.Title,
+			&i.GearLinkStatus,
+			&i.GearLinkKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPhotosByOwnerForDelete = `-- name: ListPhotosByOwnerForDelete :many
-SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos WHERE owner_subject = ? ORDER BY id
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title, gear_link_status, gear_link_key FROM photos WHERE owner_subject = ? ORDER BY id
 `
 
 // アカウント削除: 消す前にオブジェクト鍵と ID を集める。status は問わない
@@ -107,6 +162,8 @@ func (q *Queries) ListPhotosByOwnerForDelete(ctx context.Context, ownerSubject s
 			&i.SizeBytes,
 			&i.Status,
 			&i.Title,
+			&i.GearLinkStatus,
+			&i.GearLinkKey,
 		); err != nil {
 			return nil, err
 		}
@@ -122,7 +179,7 @@ func (q *Queries) ListPhotosByOwnerForDelete(ctx context.Context, ownerSubject s
 }
 
 const listStalePendingPhotos = `-- name: ListStalePendingPhotos :many
-SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title FROM photos
+SELECT id, owner_subject, visibility, gear_item_id, created_at, updated_at, object_key, content_type, size_bytes, status, title, gear_link_status, gear_link_key FROM photos
 WHERE status = 'pending_upload' AND created_at < ?
 ORDER BY created_at LIMIT ?
 `
@@ -154,6 +211,8 @@ func (q *Queries) ListStalePendingPhotos(ctx context.Context, arg ListStalePendi
 			&i.SizeBytes,
 			&i.Status,
 			&i.Title,
+			&i.GearLinkStatus,
+			&i.GearLinkKey,
 		); err != nil {
 			return nil, err
 		}
@@ -170,18 +229,21 @@ func (q *Queries) ListStalePendingPhotos(ctx context.Context, arg ListStalePendi
 
 const updatePhoto = `-- name: UpdatePhoto :exec
 UPDATE photos
-SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
+SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?,
+    gear_link_status = ?, gear_link_key = ?
 WHERE id = ?
 `
 
 type UpdatePhotoParams struct {
-	Title       sql.NullString
-	Visibility  PhotosVisibility
-	GearItemID  sql.NullInt64
-	ContentType sql.NullString
-	SizeBytes   sql.NullInt64
-	Status      PhotosStatus
-	ID          uint64
+	Title          sql.NullString
+	Visibility     PhotosVisibility
+	GearItemID     sql.NullInt64
+	ContentType    sql.NullString
+	SizeBytes      sql.NullInt64
+	Status         PhotosStatus
+	GearLinkStatus sql.NullString
+	GearLinkKey    sql.NullString
+	ID             uint64
 }
 
 func (q *Queries) UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) error {
@@ -192,6 +254,8 @@ func (q *Queries) UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) error 
 		arg.ContentType,
 		arg.SizeBytes,
 		arg.Status,
+		arg.GearLinkStatus,
+		arg.GearLinkKey,
 		arg.ID,
 	)
 	return err

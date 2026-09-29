@@ -76,6 +76,10 @@ type Photo struct {
 	sizeBytes    *int64
 	status       Status
 	createdAt    time.Time
+	// gearLinkStatus は使用機材の紐付け（同期コマンド）の確定状態。空 = 要求なし。
+	gearLinkStatus GearLinkStatus
+	// gearLinkKey は紐付けコマンドの冪等キー。回収ジョブが gear への照会に使う。
+	gearLinkKey string
 }
 
 // NewPhoto は投稿を新規に作る。ID は保存時に確定し、状態は PendingUpload から始まる。
@@ -102,6 +106,58 @@ func NewPhoto(ownerSubject string, caption Caption, visibility Visibility, gearI
 	}, nil
 }
 
+// GearLinkStatus は使用機材の紐付け（同期コマンド）の確定状態。
+// 空は「要求なし」。pending は Atomic で確定済み・gear の結果待ちで、
+// gear 停止中はここに留まり回収ジョブが冪等キー照会で確定させる（docs/02-architecture.md、4.4）。
+type GearLinkStatus string
+
+// 紐付けの状態。
+const (
+	GearLinkNone     GearLinkStatus = ""
+	GearLinkPending  GearLinkStatus = "pending"
+	GearLinked       GearLinkStatus = "linked"
+	GearLinkRejected GearLinkStatus = "rejected"
+)
+
+// ErrNoGearItem は機材未指定の写真に紐付けを要求したことを表す。
+var ErrNoGearItem = fmt.Errorf("%w: 機材が指定されていない", ErrInvalid)
+
+// ErrLinkNotPending は pending でない紐付けを確定しようとしたことを表す。
+var ErrLinkNotPending = errors.New("photo: 紐付けは結果待ちではない")
+
+// RequestGearLink は紐付けを要求済み（pending）にする。key は photo が採番する冪等キーで、
+// リトライ・回収のたびに**同じ値**を gear へ送る（キーが変わると重複排除が壊れる）。
+func (p *Photo) RequestGearLink(key string) error {
+	if p.gearItemID == nil {
+		return ErrNoGearItem
+	}
+	if key == "" {
+		return fmt.Errorf("%w: 冪等キーが空", ErrInvalid)
+	}
+	p.gearLinkStatus = GearLinkPending
+	p.gearLinkKey = key
+	return nil
+}
+
+// ConfirmGearLink は gear の受理（linked）を反映する。
+func (p *Photo) ConfirmGearLink() error {
+	if p.gearLinkStatus != GearLinkPending {
+		return ErrLinkNotPending
+	}
+	p.gearLinkStatus = GearLinked
+	return nil
+}
+
+// RejectGearLink は gear の拒否（rejected）を反映する。gear_item_id は消さない——
+// 「何に紐付けようとして拒否されたか」が消えると、利用者への表示も調査も成り立たない。
+func (p *Photo) RejectGearLink() error {
+	if p.gearLinkStatus != GearLinkPending {
+		return ErrLinkNotPending
+	}
+	p.gearLinkStatus = GearLinkRejected
+	return nil
+}
+
 // AllowedContentTypes はアップロードを受け付ける画像の種類。
 var AllowedContentTypes = []string{"image/jpeg", "image/png", "image/webp", "image/avif"}
 
@@ -116,16 +172,18 @@ func validateContentType(ct string) error {
 
 // Restored は永続化された行の値。Repository 実装が Restore へ渡す。
 type Restored struct {
-	ID           PhotoID
-	OwnerSubject string
-	Caption      Caption
-	Visibility   Visibility
-	GearItemID   *int64
-	ObjectKey    string
-	ContentType  string
-	SizeBytes    *int64
-	Status       Status
-	CreatedAt    time.Time
+	ID             PhotoID
+	OwnerSubject   string
+	Caption        Caption
+	Visibility     Visibility
+	GearItemID     *int64
+	ObjectKey      string
+	ContentType    string
+	SizeBytes      *int64
+	Status         Status
+	CreatedAt      time.Time
+	GearLinkStatus GearLinkStatus
+	GearLinkKey    string
 }
 
 // Restore は永続化された行から Entity を復元する。Repository 実装のみが呼ぶ。
@@ -134,6 +192,7 @@ func Restore(r Restored) *Photo {
 		id: r.ID, ownerSubject: r.OwnerSubject, caption: r.Caption, visibility: r.Visibility,
 		gearItemID: r.GearItemID, objectKey: r.ObjectKey, contentType: r.ContentType,
 		sizeBytes: r.SizeBytes, status: r.Status, createdAt: r.CreatedAt,
+		gearLinkStatus: r.GearLinkStatus, gearLinkKey: r.GearLinkKey,
 	}
 }
 
@@ -142,11 +201,15 @@ func (p *Photo) OwnerSubject() string   { return p.ownerSubject }
 func (p *Photo) Caption() Caption       { return p.caption }
 func (p *Photo) Visibility() Visibility { return p.visibility }
 func (p *Photo) GearItemID() *int64     { return p.gearItemID }
-func (p *Photo) ObjectKey() string      { return p.objectKey }
-func (p *Photo) ContentType() string    { return p.contentType }
-func (p *Photo) SizeBytes() *int64      { return p.sizeBytes }
-func (p *Photo) Status() Status         { return p.status }
-func (p *Photo) CreatedAt() time.Time   { return p.createdAt }
+
+// GearLinkStatus / GearLinkKey は紐付けの確定状態と冪等キー。
+func (p *Photo) GearLinkStatus() GearLinkStatus { return p.gearLinkStatus }
+func (p *Photo) GearLinkKey() string            { return p.gearLinkKey }
+func (p *Photo) ObjectKey() string              { return p.objectKey }
+func (p *Photo) ContentType() string            { return p.contentType }
+func (p *Photo) SizeBytes() *int64              { return p.sizeBytes }
+func (p *Photo) Status() Status                 { return p.status }
+func (p *Photo) CreatedAt() time.Time           { return p.createdAt }
 
 // AssignID は保存時に確定した ID を与える。Repository 実装のみが呼ぶ。
 func (p *Photo) AssignID(id PhotoID) { p.id = id }

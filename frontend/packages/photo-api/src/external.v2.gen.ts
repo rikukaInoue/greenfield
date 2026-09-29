@@ -97,7 +97,7 @@ export interface components {
             content_type: "image/jpeg" | "image/png" | "image/webp" | "image/avif";
             /**
              * Format: int64
-             * @description 使用機材（gear の item ID）。値を保存するだけで、gear 側への問い合わせや紐付けは行わない
+             * @description 使用機材（gear の item ID）。紐付けは gear への同期コマンドで確定する（応答の gear_link_status 参照）
              */
             gear_item_id?: number;
             /**
@@ -124,6 +124,11 @@ export interface components {
              * @example 42
              */
             gear_item_id?: number;
+            /**
+             * @description 使用機材の紐付けの確定状態（未指定なら無し）
+             * @enum {string}
+             */
+            gear_link_status?: "pending" | "linked" | "rejected";
             /**
              * Format: int64
              * @description 写真ID
@@ -231,6 +236,11 @@ export interface components {
              * @example 42
              */
             gear_item_id?: number;
+            /**
+             * @description 使用機材の紐付けの確定状態（未指定なら無し）
+             * @enum {string}
+             */
+            gear_link_status?: "pending" | "linked" | "rejected";
             /**
              * Format: int64
              * @description 写真ID

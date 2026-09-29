@@ -29,6 +29,21 @@ type Item struct {
 	CreatedAt time.Time
 }
 
+// 写真と機材の紐付け（同期コマンドの受理記録。冪等キーが正）
+type PhotoLink struct {
+	// photo が採番する冪等キー（Idempotency-Key）
+	LinkKey string
+	// 紐付け先の機材
+	ItemID uint64
+	// photo サービスの写真ID（値として持つだけ。FK は張らない）
+	PhotoID uint64
+	// linked / rejected
+	Status string
+	// rejected の理由（機械可読の短い語）
+	Reason    string
+	CreatedAt time.Time
+}
+
 // 他ドメイン（photo）の公開データの読み取り専用の複製。表示専用
 type PhotoReplica struct {
 	// photo サービスの ID（正は相手）

@@ -54,6 +54,9 @@ func (r *PhotoRepository) Create(ctx context.Context, p *domain.Photo) error {
 		ObjectKey:    nullString(p.ObjectKey()),
 		ContentType:  nullString(p.ContentType()),
 		Status:       sqlcgen.PhotosStatus(p.Status()),
+		// 紐付け状態は「空 = 要求なし」を NULL で表す（列コメント参照）
+		GearLinkStatus: nullString(string(p.GearLinkStatus())),
+		GearLinkKey:    nullString(p.GearLinkKey()),
 	})
 	if err != nil {
 		return fmt.Errorf("repository: create photo: %w", err)
@@ -80,33 +83,52 @@ func (r *PhotoRepository) Get(ctx context.Context, id domain.PhotoID) (*domain.P
 
 func restore(row sqlcgen.Photo) *domain.Photo {
 	return domain.Restore(domain.Restored{
-		ID:           domain.PhotoID(row.ID),
-		OwnerSubject: row.OwnerSubject,
-		Caption:      domain.Caption(row.Title.String),
-		Visibility:   domain.Visibility(row.Visibility),
-		GearItemID:   fromNullInt64(row.GearItemID),
-		ObjectKey:    row.ObjectKey.String,
-		ContentType:  row.ContentType.String,
-		SizeBytes:    fromNullInt64(row.SizeBytes),
-		Status:       domain.Status(row.Status),
-		CreatedAt:    row.CreatedAt,
+		ID:             domain.PhotoID(row.ID),
+		OwnerSubject:   row.OwnerSubject,
+		Caption:        domain.Caption(row.Title.String),
+		Visibility:     domain.Visibility(row.Visibility),
+		GearItemID:     fromNullInt64(row.GearItemID),
+		ObjectKey:      row.ObjectKey.String,
+		ContentType:    row.ContentType.String,
+		SizeBytes:      fromNullInt64(row.SizeBytes),
+		Status:         domain.Status(row.Status),
+		CreatedAt:      row.CreatedAt,
+		GearLinkStatus: domain.GearLinkStatus(row.GearLinkStatus.String),
+		GearLinkKey:    row.GearLinkKey.String,
 	})
 }
 
 // Save は Entity の状態を行へ書き戻す。
 func (r *PhotoRepository) Save(ctx context.Context, p *domain.Photo) error {
 	if err := r.queries(ctx).UpdatePhoto(ctx, sqlcgen.UpdatePhotoParams{
-		Title:       nullString(string(p.Caption())),
-		Visibility:  sqlcgen.PhotosVisibility(p.Visibility()),
-		GearItemID:  nullInt64(p.GearItemID()),
-		ContentType: nullString(p.ContentType()),
-		SizeBytes:   nullInt64(p.SizeBytes()),
-		Status:      sqlcgen.PhotosStatus(p.Status()),
-		ID:          uint64(p.ID()),
+		Title:          nullString(string(p.Caption())),
+		Visibility:     sqlcgen.PhotosVisibility(p.Visibility()),
+		GearItemID:     nullInt64(p.GearItemID()),
+		ContentType:    nullString(p.ContentType()),
+		SizeBytes:      nullInt64(p.SizeBytes()),
+		Status:         sqlcgen.PhotosStatus(p.Status()),
+		GearLinkStatus: nullString(string(p.GearLinkStatus())),
+		GearLinkKey:    nullString(p.GearLinkKey()),
+		ID:             uint64(p.ID()),
 	}); err != nil {
 		return fmt.Errorf("repository: save photo: %w", err)
 	}
 	return nil
+}
+
+// ListPendingGearLinks は紐付けが結果待ちのまま残った写真を返す（回収ジョブ用）。
+func (r *PhotoRepository) ListPendingGearLinks(ctx context.Context, before time.Time, limit int) ([]*domain.Photo, error) {
+	rows, err := r.queries(ctx).ListPendingGearLinks(ctx, sqlcgen.ListPendingGearLinksParams{
+		CreatedAt: before, Limit: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repository: pending gear links: %w", err)
+	}
+	out := make([]*domain.Photo, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, restore(row))
+	}
+	return out, nil
 }
 
 // Delete は1件削除する。
