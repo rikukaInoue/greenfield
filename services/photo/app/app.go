@@ -161,7 +161,7 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		Assurance:     simpleassurance.New(),
 		Flags:         flags.NewEvaluator("photo", flagSet),
 		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, usecase.EnvFaults{}),
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
 		closers: []func() error{db.Close, authzDB.Close},
 	}, nil
@@ -197,10 +197,18 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		Assurance:     simpleassurance.New(),
 		Flags:         flags.NewEvaluator("photo", flagSet),
 		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, usecase.EnvFaults{}),
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
 		closers: []func() error{db.Close},
 	}, nil
+}
+
+// outboxEventual は usecase.Eventual を core/consistency の Outbox で満たすアダプタ。
+// usecase は core に依存しないため、型変換だけここで担う。
+type outboxEventual struct{ o consistency.Outbox }
+
+func (e outboxEventual) Publish(ctx context.Context, ev usecase.Event) error {
+	return e.o.Publish(ctx, consistency.Event(ev))
 }
 
 // APIs はリスナー3系統の huma API を組み立てる。スペック生成とサーバ起動で共有する。

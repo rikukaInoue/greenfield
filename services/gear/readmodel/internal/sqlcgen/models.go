@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// 処理済みイベント。業務処理と同一 tx で記録し、重複配送を無害化する
+type Inbox struct {
+	// 送信側が採番したイベントID
+	EventID    string
+	EventType  string
+	ReceivedAt time.Time
+}
+
 type Item struct {
 	ID uint64
 	// camera / lens / tripod など。検証はアプリ側

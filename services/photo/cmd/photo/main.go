@@ -40,6 +40,11 @@ func main() {
 		err = runMigrate(ctx, os.Args[2:])
 	case len(os.Args) >= 2 && os.Args[1] == "reclaim":
 		err = runReclaim(ctx, os.Args[2:])
+	case len(os.Args) >= 2 && os.Args[1] == "relay":
+		// outbox → SNS の常駐 relay。停止しても未送信が DB に残るだけ（check #8）
+		err = app.RunRelay(ctx, app.RelayConfigFromEnv())
+	case len(os.Args) >= 2 && os.Args[1] == "republish":
+		err = runRepublish(ctx, os.Args[2:])
 	default:
 		err = app.Run(ctx, app.ConfigFromEnv())
 	}
@@ -99,5 +104,27 @@ func runReclaim(ctx context.Context, args []string) error {
 		return err
 	}
 	slog.Info("reclaim finished", "reclaimed", n, "older_than", olderThan.String())
+	return nil
+}
+
+// runRepublish は outbox から期間内のイベントを再送する（再生の正は outbox。check #10）。
+func runRepublish(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("republish", flag.ContinueOnError)
+	since := fs.String("since", "", "この時刻（RFC3339）以降のイベントを再送する")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *since == "" {
+		return fmt.Errorf("usage: photo republish --since 2026-09-29T00:00:00Z")
+	}
+	t, err := time.Parse(time.RFC3339, *since)
+	if err != nil {
+		return fmt.Errorf("--since が読めない: %w", err)
+	}
+	n, err := app.Republish(ctx, app.RelayConfigFromEnv(), t)
+	if err != nil {
+		return err
+	}
+	slog.Info("republish 完了", "count", n, "since", t)
 	return nil
 }

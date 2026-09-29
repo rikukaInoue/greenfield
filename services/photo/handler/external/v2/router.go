@@ -5,6 +5,7 @@ package externalv2
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -279,6 +280,9 @@ func toHTTP(err error) error {
 	case errors.Is(err, usecase.ErrInjectedFault):
 		return problem.New(http.StatusInternalServerError, "photo.injected_fault", "注入された失敗")
 	default:
+		// 原因は応答に載せずログへ（内部情報の漏洩を防ぐ）。AccessLog はステータスしか
+		// 持たないので、ここで落とすと原因が消える（4.1 の gear と同じ扱い）
+		slog.Error("内部エラー", "error", err)
 		return problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
 	}
 }

@@ -14,7 +14,7 @@ import (
 
 // フラグのテストは flagd を立てず、評価済みの値を ctx へ積んで ON / OFF 両方を通す。
 func TestCreateHonorsKillSwitch(t *testing.T) {
-	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, &stubRepo{}, &stubImages{}, nil, &stubRelations{}, nil)
+	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, &stubRepo{}, &stubImages{}, nil, &stubRelations{}, sinkEventual{}, nil)
 	principal := authz.Principal{Subject: "alice", Kind: authz.PrincipalUser}
 	in := usecase.CreatePhotoInput{Caption: "x", ContentType: "image/png"}
 
@@ -50,7 +50,7 @@ func TestCreateHonorsKillSwitch(t *testing.T) {
 }
 
 func TestCanCreateMatchesCreate(t *testing.T) {
-	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, &stubRepo{}, &stubImages{}, nil, &stubRelations{}, nil)
+	cmds := usecase.NewPhotoCommands(consistency.FakeAtomic{}, &stubRepo{}, &stubImages{}, nil, &stubRelations{}, sinkEventual{}, nil)
 	principal := authz.Principal{Subject: "alice", Kind: authz.PrincipalUser}
 
 	cases := []struct {

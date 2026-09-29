@@ -339,6 +339,45 @@ jobs:
           GEAR_EXTERNAL_URL: http://localhost:18090
 
 
+  # Eventual（outbox + relay + SNS/SQS + inbox。4.2）。authz ジョブとは依存が違う
+  # （Keycloak も OpenFGA も要らず、代わりに LocalStack が要る）ので分ける。
+  eventual:
+    needs: changes
+    if: >-
+      contains(fromJSON(needs.changes.outputs.go), './core') ||
+      contains(fromJSON(needs.changes.outputs.go), './services/photo') ||
+      contains(fromJSON(needs.changes.outputs.go), './services/gear')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MySQL と LocalStack を起動する
+        run: |
+          docker run -d --name mysql -p 13306:3306 -e MYSQL_ROOT_PASSWORD=root mysql:8.4
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=sns,sqs localstack/localstack:4
+
+      - uses: ./.github/actions/prepare
+        with:
+          cache-key: eventual
+          mysql: "true"
+
+      - name: photo と gear のマイグレーションを流す
+        run: MODULES="./services/photo ./services/gear" mise run --quiet migrate
+
+      - name: LocalStack の起動を待ちトピック・キューを用意する
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:4566/_localstack/health && break
+            sleep 2
+          done
+          go run ./dev/eventadmin ensure-topics
+
+      - name: 配送の一気通貫（#8 relay停止→回復 / #9 重複無害化）
+        run: dev/scripts/eventual-check.sh
+        env:
+          LOCALSTACK_CONTAINER: localstack
+
+
   frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'

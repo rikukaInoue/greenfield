@@ -35,6 +35,9 @@ func main() {
 	switch {
 	case len(os.Args) >= 2 && os.Args[1] == "migrate":
 		err = runMigrate(ctx, os.Args[2:])
+	case len(os.Args) >= 2 && os.Args[1] == "consume":
+		// photo のイベントを SQS から受けて inbox + 業務処理へ（4.2）
+		err = app.RunConsumer(ctx, app.ConsumeConfigFromEnv())
 	default:
 		err = app.Run(ctx, app.ConfigFromEnv())
 	}

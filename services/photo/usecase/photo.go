@@ -62,16 +62,17 @@ type PhotoCommands struct {
 	images     ImageStore
 	authorizer authz.Authorizer
 	relations  authz.RelationWriter
+	eventual   Eventual
 	// faults は検証用の失敗注入。本番では常に空。
 	faults FaultInjector
 }
 
 // NewPhotoCommands は PhotoCommands を組み立てる。
-func NewPhotoCommands(atomic Atomic, photos PhotoRepository, images ImageStore, authorizer authz.Authorizer, relations authz.RelationWriter, faults FaultInjector) *PhotoCommands {
+func NewPhotoCommands(atomic Atomic, photos PhotoRepository, images ImageStore, authorizer authz.Authorizer, relations authz.RelationWriter, eventual Eventual, faults FaultInjector) *PhotoCommands {
 	if faults == nil {
 		faults = NoFaults{}
 	}
-	return &PhotoCommands{atomic: atomic, photos: photos, images: images, authorizer: authorizer, relations: relations, faults: faults}
+	return &PhotoCommands{atomic: atomic, photos: photos, images: images, authorizer: authorizer, relations: relations, eventual: eventual, faults: faults}
 }
 
 // CanCreate は主体が今投稿できるかを返す。Create と同じ判定を使う。
@@ -247,6 +248,15 @@ func (c *PhotoCommands) Publish(ctx context.Context, id domain.PhotoID) (*domain
 		if err := c.photos.Save(ctx, p); err != nil {
 			return err
 		}
+		// 公開の事実は Eventual で公表する。outbox への記録が業務データと
+		// 同一 tx なので「公開されたのに送信予定がない」は作れない（ADR 0012）
+		ev, err := publishedEvent(p)
+		if err != nil {
+			return err
+		}
+		if err := c.eventual.Publish(ctx, ev); err != nil {
+			return err
+		}
 		photo = p
 		return nil
 	})
@@ -295,8 +305,21 @@ func (c *PhotoCommands) DeleteByOwner(ctx context.Context, ownerSubject string) 
 	var deleted int
 	if err := c.atomic.Do(ctx, func(ctx context.Context) error {
 		n, err := c.photos.DeleteByOwner(ctx, ownerSubject)
+		if err != nil {
+			return err
+		}
 		deleted = n
-		return err
+		// 削除も公表する（ReplicaView が公開レプリカから落とすため）。行の削除と同一 tx
+		for _, p := range photos {
+			ev, err := deletedEvent(p.ID())
+			if err != nil {
+				return err
+			}
+			if err := c.eventual.Publish(ctx, ev); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		return 0, err
 	}
