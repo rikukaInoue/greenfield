@@ -79,7 +79,7 @@ start_bg "$tmp/consume.log" "$GEAR_BIN" consume
 # pub(91002) が先に入り delete(91002) で消える途中状態を件数が掴むと誤判定になる
 # （CI で実際に踏んだ）。最終状態の内容そのものを待つ
 CAPTIONS=""
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
   CAPTIONS=$(${MYSQL} -N gear -e "SELECT caption FROM photo_replica WHERE photo_id >= 91001 ORDER BY photo_id;" 2>/dev/null)
   [ "$CAPTIONS" = "replica-check-1" ] && break
   sleep 1
@@ -87,7 +87,12 @@ done
 if [ "$CAPTIONS" = "replica-check-1" ]; then
   ok "published が入り、deleted は消え、機材なしは入らない"
 else
-  ng "複製の中身: [$CAPTIONS]: $(tail -3 "$tmp/consume.log")"
+  ng "複製の中身: [$CAPTIONS]"
+  # 落ちた場所を切り分けられる形で残す: 送信側（outbox / relay）か受信側（consumer）か
+  echo "  -- outbox --" >&2
+  ${MYSQL} photo -e "SELECT event_id, event_type, published_at IS NOT NULL AS sent, attempts, last_error FROM outbox WHERE aggregate_id LIKE 'photo:91%';" >&2 2>/dev/null
+  echo "  -- relay --" >&2; tail -5 "$tmp/relay.log" >&2
+  echo "  -- consumer --" >&2; tail -10 "$tmp/consume.log" >&2
 fi
 
 echo
