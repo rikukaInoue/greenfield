@@ -1,15 +1,16 @@
 -- コマンド側（Entity の復元・保存）のクエリ。参照できるのは自ドメイン（photo）のテーブルのみ。
 
 -- name: CreatePhoto :execresult
-INSERT INTO photos (owner_subject, title, visibility, gear_item_id, object_key, content_type, status)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO photos (owner_subject, title, visibility, gear_item_id, object_key, content_type, status, gear_link_status, gear_link_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetPhotoForUpdate :one
 SELECT * FROM photos WHERE id = ? FOR UPDATE;
 
 -- name: UpdatePhoto :exec
 UPDATE photos
-SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?
+SET title = ?, visibility = ?, gear_item_id = ?, content_type = ?, size_bytes = ?, status = ?,
+    gear_link_status = ?, gear_link_key = ?
 WHERE id = ?;
 
 -- name: ListPhotosByOwnerForDelete :many
@@ -28,3 +29,9 @@ DELETE FROM photos WHERE id = ?;
 SELECT * FROM photos
 WHERE status = 'pending_upload' AND created_at < ?
 ORDER BY created_at LIMIT ?;
+
+-- name: ListPendingGearLinks :many
+-- 回収ジョブ（4.4）: 紐付けが結果待ちのまま残った行。gear 停止中に作られたものが該当する
+SELECT * FROM photos
+WHERE gear_link_status = 'pending' AND created_at < ?
+ORDER BY id LIMIT ?;

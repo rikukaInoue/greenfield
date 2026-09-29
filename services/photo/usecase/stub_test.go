@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/rikukaInoue/greenfield/core/authz"
@@ -54,6 +55,56 @@ func (r *stubRepo) ListByOwner(_ context.Context, owner string) ([]*domain.Photo
 }
 func (r *stubRepo) ListStalePending(context.Context, time.Time, int) ([]*domain.Photo, error) {
 	return nil, nil
+}
+func (r *stubRepo) ListPendingGearLinks(_ context.Context, _ time.Time, _ int) ([]*domain.Photo, error) {
+	var out []*domain.Photo
+	for _, p := range r.created {
+		if p.GearLinkStatus() == domain.GearLinkPending {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// stubGearLink は gear の代役。既定は常に受理（linked）。
+type stubGearLink struct {
+	// down が true なら「gear 停止中」を再現する
+	down bool
+	// received は受けたキー → 結果（Get の照会に答える）
+	received map[string]usecase.GearLinkResult
+	// reject が true なら拒否を返す
+	reject bool
+	links  int
+}
+
+func (g *stubGearLink) Link(_ context.Context, _, _ int64, key string) (usecase.GearLinkResult, error) {
+	if g.down {
+		return usecase.GearLinkResult{}, errors.New("gear down")
+	}
+	if g.received == nil {
+		g.received = map[string]usecase.GearLinkResult{}
+	}
+	if res, ok := g.received[key]; ok {
+		return res, nil // 同じキーは最初の結果（gear 側の冪等性の再現）
+	}
+	g.links++
+	res := usecase.GearLinkResult{Status: "linked"}
+	if g.reject {
+		res = usecase.GearLinkResult{Status: "rejected", Reason: "item_not_found"}
+	}
+	g.received[key] = res
+	return res, nil
+}
+
+func (g *stubGearLink) Get(_ context.Context, key string) (usecase.GearLinkResult, error) {
+	if g.down {
+		return usecase.GearLinkResult{}, errors.New("gear down")
+	}
+	res, ok := g.received[key]
+	if !ok {
+		return usecase.GearLinkResult{}, usecase.ErrLinkNotFound
+	}
+	return res, nil
 }
 
 type stubImages struct {

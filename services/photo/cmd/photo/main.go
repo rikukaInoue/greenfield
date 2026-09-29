@@ -40,6 +40,9 @@ func main() {
 		err = runMigrate(ctx, os.Args[2:])
 	case len(os.Args) >= 2 && os.Args[1] == "reclaim":
 		err = runReclaim(ctx, os.Args[2:])
+	case len(os.Args) >= 2 && os.Args[1] == "reclaim-links":
+		// pending のまま残った紐付けを冪等キー照会で確定させる（check #11）
+		err = runReclaimLinks(ctx, os.Args[2:])
 	case len(os.Args) >= 2 && os.Args[1] == "relay":
 		// outbox → SNS の常駐 relay。停止しても未送信が DB に残るだけ（check #8）
 		err = app.RunRelay(ctx, app.RelayConfigFromEnv())
@@ -126,5 +129,32 @@ func runRepublish(ctx context.Context, args []string) error {
 		return err
 	}
 	slog.Info("republish 完了", "count", n, "since", t)
+	return nil
+}
+
+// runReclaimLinks は gear 停止中に pending で残った紐付けを確定させる（4.4 / check #11）。
+func runReclaimLinks(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("reclaim-links", flag.ContinueOnError)
+	olderThan := fs.Duration("older-than", time.Minute, "この時間を超えて結果待ちの紐付けを対象にする")
+	limit := fs.Int("limit", 100, "1回で処理する上限")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	cfg := app.ConfigFromEnv()
+	build := app.LocalDeps
+	if cfg.OIDCIssuer != "" {
+		build = app.OIDCDeps
+	}
+	deps, err := build(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer deps.Close()
+
+	n, err := deps.Commands.ReclaimGearLinks(ctx, *olderThan, *limit)
+	if err != nil {
+		return err
+	}
+	slog.Info("reclaim-links 完了", "settled", n, "older_than", olderThan.String())
 	return nil
 }

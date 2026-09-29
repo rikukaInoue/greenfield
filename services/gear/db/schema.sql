@@ -15,6 +15,16 @@ CREATE TABLE `items` (
   PRIMARY KEY (`id`),
   KEY `idx_items_kind` (`kind`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE `photo_links` (
+  `link_key` char(32) NOT NULL COMMENT 'photo が採番する冪等キー（Idempotency-Key）',
+  `item_id` bigint unsigned NOT NULL COMMENT '紐付け先の機材',
+  `photo_id` bigint unsigned NOT NULL COMMENT 'photo サービスの写真ID（値として持つだけ。FK は張らない）',
+  `status` varchar(16) NOT NULL COMMENT 'linked / rejected',
+  `reason` varchar(100) NOT NULL DEFAULT '' COMMENT 'rejected の理由（機械可読の短い語）',
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`link_key`),
+  KEY `idx_photo_links_item` (`item_id`,`photo_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='写真と機材の紐付け（同期コマンドの受理記録。冪等キーが正）';
 CREATE TABLE `photo_replica` (
   `photo_id` bigint unsigned NOT NULL COMMENT 'photo サービスの ID（正は相手）',
   `gear_item_id` bigint unsigned NOT NULL COMMENT 'どの機材の作例か',

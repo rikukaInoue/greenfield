@@ -23,7 +23,7 @@
             "type": "string"
           },
           "gear_item_id": {
-            "description": "使用機材（gear の item ID）。値を保存するだけで、gear 側への問い合わせや紐付けは行わない",
+            "description": "使用機材（gear の item ID）。紐付けは gear への同期コマンドで確定する（応答の gear_link_status 参照）",
             "format": "int64",
             "minimum": 1,
             "type": "integer"
@@ -66,6 +66,15 @@
             ],
             "format": "int64",
             "type": "integer"
+          },
+          "gear_link_status": {
+            "description": "使用機材の紐付けの確定状態（未指定なら無し）",
+            "enum": [
+              "pending",
+              "linked",
+              "rejected"
+            ],
+            "type": "string"
           },
           "id": {
             "description": "写真ID",
@@ -263,6 +272,15 @@
             ],
             "format": "int64",
             "type": "integer"
+          },
+          "gear_link_status": {
+            "description": "使用機材の紐付けの確定状態（未指定なら無し）",
+            "enum": [
+              "pending",
+              "linked",
+              "rejected"
+            ],
+            "type": "string"
           },
           "id": {
             "description": "写真ID",

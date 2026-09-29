@@ -16,6 +16,7 @@ import (
 
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/authz/authzhttp"
+	"github.com/rikukaInoue/greenfield/core/authz/devtoken"
 	"github.com/rikukaInoue/greenfield/core/authz/localauthz"
 	"github.com/rikukaInoue/greenfield/core/authz/oidcauthn"
 	"github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
@@ -27,6 +28,7 @@ import (
 	"github.com/rikukaInoue/greenfield/core/runtimeenv"
 	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/flagsource"
+	"github.com/rikukaInoue/greenfield/services/photo/gearlink"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	externalv2 "github.com/rikukaInoue/greenfield/services/photo/handler/external/v2"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
@@ -81,6 +83,8 @@ type Config struct {
 	OIDCIssuer string
 	// AuthzURL は platform/authz のベースURL。
 	AuthzURL string
+	// GearInternalURL は gear の internal リスナー。使用機材の紐付け（同期コマンド）に使う。
+	GearInternalURL string
 	// M2M は authz サービスを呼ぶための client_credentials。
 	M2M M2MConfig
 }
@@ -97,16 +101,17 @@ type M2MConfig struct {
 // ConfigFromEnv は環境変数から設定を読む。
 func ConfigFromEnv() Config {
 	return Config{
-		MetricsAddr:   os.Getenv("METRICS_ADDR"),
-		ExternalAddr:  envOr("PHOTO_EXTERNAL_ADDR", ":8080"),
-		InternalAddr:  envOr("PHOTO_INTERNAL_ADDR", ":8081"),
-		AdminAddr:     envOr("PHOTO_ADMIN_ADDR", ":8082"),
-		DSN:           envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:13306)/photo?parseTime=true"),
-		LocalAuthzDSN: envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"),
-		Flags:         flagsource.ConfigFromEnv(),
-		Images:        imageConfigFromEnv(),
-		OIDCIssuer:    os.Getenv("OIDC_ISSUER"),
-		AuthzURL:      envOr("AUTHZ_URL", "http://localhost:8100"),
+		MetricsAddr:     os.Getenv("METRICS_ADDR"),
+		ExternalAddr:    envOr("PHOTO_EXTERNAL_ADDR", ":8080"),
+		InternalAddr:    envOr("PHOTO_INTERNAL_ADDR", ":8081"),
+		AdminAddr:       envOr("PHOTO_ADMIN_ADDR", ":8082"),
+		DSN:             envOr("PHOTO_DSN", "photo_app:photo_app@tcp(127.0.0.1:13306)/photo?parseTime=true"),
+		LocalAuthzDSN:   envOr("LOCALAUTHZ_DSN", "localauthz:localauthz@tcp(127.0.0.1:13306)/localauthz"),
+		Flags:           flagsource.ConfigFromEnv(),
+		Images:          imageConfigFromEnv(),
+		OIDCIssuer:      os.Getenv("OIDC_ISSUER"),
+		AuthzURL:        envOr("AUTHZ_URL", "http://localhost:8100"),
+		GearInternalURL: envOr("GEAR_INTERNAL_URL", "http://localhost:8091"),
 		M2M: M2MConfig{
 			TokenURL:     os.Getenv("M2M_TOKEN_URL"),
 			ClientID:     envOr("M2M_CLIENT_ID", "svc-photo"),
@@ -164,12 +169,22 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		// フラグ基盤に繋がらなくても起動は続ける。評価は宣言した既定値へ倒れる
 		slog.Warn("フラグ基盤に接続できないので既定値で動く", "config", cfg.Flags, "err", err)
 	}
+	// dev ループでは gear も staticauthn なので、devtoken の M2M（svc-photo、
+	// scope internal:gear）で紐付けコマンドを送る（gear→photo の逆向きと同じ流儀）
+	gearToken := httpclient.StaticTokenSource(devtoken.Mint(devtoken.Claims{
+		Subject: "svc-photo", ClientID: "svc-photo", Service: true,
+		Scopes: []string{"internal:gear"},
+	}))
+	gear, err := gearlink.New(cfg.GearInternalURL, httpclient.Client(gearToken))
+	if err != nil {
+		return nil, fmt.Errorf("gearlink: %w", err)
+	}
 	return &Deps{
 		Authenticator: authn,
 		Assurance:     simpleassurance.New(),
 		Flags:         flags.NewEvaluator("photo", flagSet),
 		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, usecase.EnvFaults{}),
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, gear, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
 		DB:      db,
 		closers: []func() error{db.Close, authzDB.Close},
@@ -201,12 +216,19 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if err := flagsource.Register(ctx, "photo", cfg.Flags); err != nil {
 		slog.Warn("フラグ基盤に接続できないので既定値で動く", "config", cfg.Flags, "err", err)
 	}
+	// gear internal は internal:gear スコープを要求する。authz 用（internal:platform）とは
+	// トークンを分ける——1トークンに全スコープを盛ると、漏れたときの被害が全内部APIに広がる
+	gearTS := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, "internal:gear")
+	gear, err := gearlink.New(cfg.GearInternalURL, httpclient.Client(gearTS))
+	if err != nil {
+		return nil, fmt.Errorf("gearlink: %w", err)
+	}
 	return &Deps{
 		Authenticator: authn,
 		Assurance:     simpleassurance.New(),
 		Flags:         flags.NewEvaluator("photo", flagSet),
 		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, usecase.EnvFaults{}),
+			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, gear, usecase.EnvFaults{}),
 		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
 		DB:      db,
 		closers: []func() error{db.Close},

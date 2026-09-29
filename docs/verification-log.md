@@ -53,3 +53,4 @@
 | 2026-09-29 | [ステージ 4.1 サービス間（#51）](verification-log/2026-09-29-stage-41.md) |
 | 2026-09-29 | [ステージ 4.2 Eventual（#52） / チェック #8・#9](verification-log/2026-09-29-stage-42.md) |
 | 2026-09-29 | [ステージ 4.3 ReplicaView（#53） / チェック #10](verification-log/2026-09-29-stage-43.md) |
+| 2026-09-29 | [ステージ 4.4 同期コマンド（#54） / チェック #11](verification-log/2026-09-29-stage-44.md) |

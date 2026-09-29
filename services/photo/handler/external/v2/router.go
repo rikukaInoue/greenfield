@@ -100,6 +100,9 @@ type Photo struct {
 	Visibility string `json:"visibility" enum:"private,public" example:"public" doc:"公開状態"`
 	Status     string `json:"status" enum:"pending_upload,ready" example:"ready" doc:"画像のアップロード状態"`
 	GearItemID *int64 `json:"gear_item_id,omitempty" example:"42" doc:"使用機材（gear の item ID）"`
+	// 紐付けは同期コマンド（4.4）。pending は gear の結果待ちで、gear 停止中でも投稿は成立し、
+	// 回収ジョブが後から確定させる
+	GearLinkStatus string `json:"gear_link_status,omitempty" enum:"pending,linked,rejected" doc:"使用機材の紐付けの確定状態（未指定なら無し）"`
 	// gear_name は ReplicaView 由来として契約に載せていたが、replicaview/ は空で
 	// fromView は一度も値を入れていなかった。実装ができるまで契約から外す（監査 E）。
 	ImageURL  string `json:"image_url,omitempty" doc:"画像取得用の署名付きURL。期限付き"`
@@ -112,9 +115,9 @@ type CreatePhotoInput struct {
 	Body struct {
 		Caption    string `json:"caption" maxLength:"1000" doc:"キャプション"`
 		Visibility string `json:"visibility,omitempty" enum:"private,public" default:"private" doc:"公開状態"`
-		// 「gear への紐付けが pending で始まる」と書いていたが Create は gear に
-		// 一切接触しない。値を保存するだけなので、そのとおりに書く（監査 E）。
-		GearItemID  *int64 `json:"gear_item_id,omitempty" minimum:"1" doc:"使用機材（gear の item ID）。値を保存するだけで、gear 側への問い合わせや紐付けは行わない"`
+		// 紐付けは同期コマンドとして gear へ届く（4.4）。gear 停止中は pending のまま
+		// 投稿が成立し、回収ジョブが確定させる
+		GearItemID  *int64 `json:"gear_item_id,omitempty" minimum:"1" doc:"使用機材（gear の item ID）。紐付けは gear への同期コマンドで確定する（応答の gear_link_status 参照）"`
 		ContentType string `json:"content_type" enum:"image/jpeg,image/png,image/webp,image/avif" example:"image/jpeg" doc:"アップロードする画像の種類"`
 	}
 }
@@ -235,6 +238,7 @@ func fromEntity(p *domain.Photo) Photo {
 		Status:     string(p.Status()),
 		GearItemID: p.GearItemID(),
 	}
+	out.GearLinkStatus = string(p.GearLinkStatus())
 	if p.SizeBytes() != nil {
 		out.SizeBytes = *p.SizeBytes()
 	}

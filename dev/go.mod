@@ -30,6 +30,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
+	github.com/rikukaInoue/greenfield/services/gear-client v0.0.0 // indirect
 	github.com/rikukaInoue/greenfield/services/photo-client v0.0.0 // indirect
 	github.com/rikukaInoue/greenfield/telemetry v0.0.0-00010101000000-000000000000 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
@@ -109,3 +110,5 @@ tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 replace github.com/rikukaInoue/greenfield/services/photo-client => ../services/photo-client
 
 replace github.com/rikukaInoue/greenfield/telemetry => ../telemetry
+
+replace github.com/rikukaInoue/greenfield/services/gear-client => ../services/gear-client

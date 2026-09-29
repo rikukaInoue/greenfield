@@ -316,6 +316,9 @@ jobs:
             AUTHZ_URL=http://localhost:8101 \
             M2M_TOKEN_URL=http://localhost:8180/realms/greenfield/protocol/openid-connect/token \
             M2M_CLIENT_SECRET=svc-photo-dev-secret \
+            GEAR_INTERNAL_URL=http://localhost:18091 \
+            AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=testtest AWS_REGION=us-east-1 \
+            PHOTO_IMAGE_BUCKET=photo-images \
             PHOTO_EXTERNAL_ADDR=:18080 PHOTO_INTERNAL_ADDR=:18081 PHOTO_ADMIN_ADDR=:18082 \
             go run ./cmd/photo & )
           for i in $(seq 1 40); do
@@ -330,6 +333,14 @@ jobs:
           PHOTO_EXTERNAL_URL: http://localhost:18080
           PHOTO_INTERNAL_URL: http://localhost:18081
           AUTHZ_URL: http://localhost:8101
+
+      # gear はまだ起動していない = 「gear 停止中」を作らずに得られる（4.4 / check #11 前半）
+      - name: gear 停止中の紐付け要求が pending で成立する（#11 前半）
+        run: dev/scripts/pending-check.sh request
+        env:
+          PHOTO_EXTERNAL_URL: http://localhost:18080
+          GEAR_INTERNAL_URL: http://localhost:18091
+          PENDING_CHECK_STATE: /tmp/pending-check-state
 
       # --- ここから 4.1: サービス間結合（gear→photo の M2M） ---
       - name: gear を本番アダプタ（OIDCDeps）で起動する
@@ -351,6 +362,22 @@ jobs:
         run: dev/scripts/s2s-check.sh
         env:
           GEAR_EXTERNAL_URL: http://localhost:18090
+
+      - name: 回収ジョブが pending を確定させる（#11 後半）
+        run: dev/scripts/pending-check.sh settle
+        env:
+          PHOTO_EXTERNAL_URL: http://localhost:18080
+          PENDING_CHECK_STATE: /tmp/pending-check-state
+          RECLAIM_CMD: >-
+            env -C services/photo GOWORK=off
+            OIDC_ISSUER=http://localhost:8180/realms/greenfield
+            AUTHZ_URL=http://localhost:8101
+            M2M_TOKEN_URL=http://localhost:8180/realms/greenfield/protocol/openid-connect/token
+            M2M_CLIENT_SECRET=svc-photo-dev-secret
+            GEAR_INTERNAL_URL=http://localhost:18091
+            AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=testtest AWS_REGION=us-east-1
+            PHOTO_IMAGE_BUCKET=photo-images
+            go run ./cmd/photo reclaim-links --older-than 0s
 
 
   # Eventual（outbox + relay + SNS/SQS + inbox。4.2）。authz ジョブとは依存が違う
