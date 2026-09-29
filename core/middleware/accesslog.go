@@ -39,7 +39,7 @@ func AccessLog(next http.Handler) http.Handler {
 		// **Authorization / Cookie / クエリ文字列は出さない。**
 		// 出していいものを列挙する側に寄せる（禁止リスト方式は必ず漏れる）。
 		// url.path はパスのみで、クエリは入れない（トークンや個人情報が乗りうる）。
-		l.LogAttrs(ctx, slog.LevelInfo, "request",
+		attrs := []slog.Attr{
 			slog.String("http.request.method", r.Method),
 			slog.String("url.path", r.URL.Path),
 			slog.Int("http.response.status_code", rec.status),
@@ -47,7 +47,15 @@ func AccessLog(next http.Handler) http.Handler {
 			slog.Int64("http.server.request.duration_ms", time.Since(start).Milliseconds()),
 			slog.String("network.protocol.version", protoVersion(r)),
 			slog.String("user_agent.original", r.UserAgent()),
-		)
+		}
+		// 冪等キーは載せる（許可リストに明示的に追加した1項目。秘密ではなく操作の識別子）。
+		// リトライは試行ごとに trace_id が変わるため、**同じ操作の試行同士を繋げる唯一の
+		// 安定した識別子**がこれになる。重複排除(4.2/4.4)が入った後は「2回目は実行せず
+		// 同じ応答を返した」ことの検証材料にもなる。
+		if k := r.Header.Get("Idempotency-Key"); k != "" {
+			attrs = append(attrs, slog.String("http.request.header.idempotency-key", k))
+		}
+		l.LogAttrs(ctx, slog.LevelInfo, "request", attrs...)
 	})
 }
 
