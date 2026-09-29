@@ -7,3 +7,6 @@
 
 # 生成ドキュメント（mise run api:docs。Pages へは CI がデプロイ）
 api-docs/
+
+# traffic-split-drill が生成する Caddyfile
+deploy/compose/caddy/drill/

@@ -251,7 +251,11 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	if deps == nil {
 		deps = &Deps{}
 	}
-	base := httpapi.Options{Service: "photo", Version: Version, Authenticator: deps.Authenticator}
+	base := httpapi.Options{
+		Service: "photo", Version: Version, Authenticator: deps.Authenticator,
+		// デプロイ識別子。ECS ではタスク定義リビジョン等を入れる。カナリア観測用（#172）
+		Revision: envOr("SERVICE_REVISION", Version),
+	}
 	if deps.Flags != nil {
 		// 認証の後に置く（ターゲティングキーに Principal を使う）
 		base.Middlewares = append(base.Middlewares, deps.Flags.Middleware())

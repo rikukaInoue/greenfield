@@ -218,7 +218,10 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	if deps != nil {
 		authn, azr, lister, assurance = deps.Authenticator, deps.Authorizer, deps.Lister, deps.Assurance
 	}
-	base := httpapi.Options{Service: "gear", Version: Version, Authenticator: authn}
+	base := httpapi.Options{
+		Service: "gear", Version: Version, Authenticator: authn,
+		Revision: envOr("SERVICE_REVISION", Version), // カナリア観測用（#172）
+	}
 
 	ext := httpapi.New(httpapi.External, base) // v1 は New が作る（AddMajor は 2 以降）
 	if deps != nil {
