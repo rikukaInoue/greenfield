@@ -56,3 +56,4 @@
 | 2026-09-29 | [ステージ 4.4 同期コマンド（#54） / チェック #11](verification-log/2026-09-29-stage-44.md) |
 | 2026-09-30 | [ステージ 5.2 SSR 後半: confidential client（#56） / チェック #17](verification-log/2026-09-30-stage-52-oidc.md) |
 | 2026-09-30 | [トラフィック分割のローカル予行（#172）](verification-log/2026-09-30-traffic-split-drill.md) |
+| 2026-09-30 | [7.2b 早期判定の再演: 昇格ゲート・アラーム自動ロールバック・stopDeployment（#175）](verification-log/2026-09-30-stage-72b.md) |
