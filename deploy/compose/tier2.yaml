@@ -1,0 +1,69 @@
+# Tier 2(ローカルALB相当。internal-07 / #55)。日常は Tier 1(ポート直)で足りるので、
+# これは**結合・認証フローの検証時だけ** compose.yaml に重ねる:
+#
+#   docker compose -f compose.yaml -f tier2.yaml --profile deploy up -d --build --wait photo caddy authz
+#   (mise run tier2:up)
+#
+# 目的は issuer 整合の再現: アプリをコンテナ化すると「ブラウザが見る issuer 名」と
+# 「コンテナが解決できる issuer 名」が食い違う(コンテナ内に localhost:8180 は無い)。
+# Caddy を compose ネットワークに置き、auth.localhost を network alias で張ることで、
+# ブラウザ(ループバック:80)とコンテナ(alias)の両方から同じ名前で Keycloak に届く。
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: greenfield-caddy
+    ports:
+      - "127.0.0.1:80:80"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      default:
+        aliases:
+          # コンテナ内の名前解決をこの Caddy へ向ける(issuer 整合の要)
+          - auth.localhost
+          - photo.api.localhost
+          - gear.api.localhost
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # 認可サービス(3.2)。Tier 2 では photo が本番アダプタ(OIDCDeps)で動くため必須になる
+  authz:
+    build:
+      context: ../..
+      dockerfile: platform/authz/Dockerfile
+    image: greenfield/authz:local
+    container_name: greenfield-authz
+    environment:
+      ENV: dev
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      AUTHZ_ADDR: ":8100"
+      OPENFGA_URL: "http://openfga:8080"
+      # issuer は統一名。JWKS の取得も alias 経由で Caddy → Keycloak に届く
+      OIDC_ISSUER: "http://auth.localhost/realms/greenfield"
+    depends_on:
+      # openfga は distroless で healthcheck を書けない(base 側の注記)。
+      # authz 自身が起動時に EnsureStore を30回リトライして吸収する
+      openfga:
+        condition: service_started
+      caddy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8100/healthz"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  # photo を本番アダプタ(oidcauthn + authzhttp)で上書きする。
+  # base(compose.yaml)の photo は Tier 1 の開発用(staticauthn / localauthz)のまま
+  photo:
+    environment:
+      OIDC_ISSUER: "http://auth.localhost/realms/greenfield"
+      AUTHZ_URL: "http://authz:8100"
+      M2M_TOKEN_URL: "http://auth.localhost/realms/greenfield/protocol/openid-connect/token"
+      M2M_CLIENT_SECRET: "svc-photo-dev-secret"
+    depends_on:
+      caddy:
+        condition: service_started
+      authz:
+        condition: service_healthy

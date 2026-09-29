@@ -156,6 +156,16 @@ run = [
   'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]
 
+[tasks."tier2:up"]
+description = "Tier 2(Caddy + 本番アダプタの photo + authz)を起動(internal-07 / #55)"
+dir = "deploy/compose"
+run = "docker compose -f compose.yaml -f tier2.yaml --profile deploy up -d --build --wait caddy authz photo"
+
+[tasks."tier2:down"]
+description = "Tier 2 を落とす(base の Tier 1 構成は残る)"
+dir = "deploy/compose"
+run = "docker compose -f compose.yaml -f tier2.yaml --profile deploy rm -sf caddy authz && docker compose --profile deploy up -d --wait photo"
+
 [tasks."db:down"]
 description = "コンテナを停止"
 run = "docker compose down"
