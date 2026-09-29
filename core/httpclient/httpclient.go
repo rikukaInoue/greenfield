@@ -1,12 +1,14 @@
 // Package httpclient はサービス間呼び出しの HTTP クライアント基盤。
 // M2M トークン（client_credentials）の取得・キャッシュ・自動付与を担う。
 //
-// このステージ（3.3）で入るのはトークンまわりのみ。Idempotency-Key の付与と
-// トレースID伝播は 4.1（サービス間コマンド）以降で足す（docs/03-platform.md §9、#138）。
+// 担うもの: M2M トークンの取得・キャッシュ・自動付与（3.3）、Idempotency-Key の
+// 自動付与と traceparent の伝播（4.1。docs/03-platform.md §9、#138）。
 package httpclient
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,7 +17,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rikukaInoue/greenfield/core/middleware"
 )
+
+// TokenProvider はアクセストークンの供給元。実運用は TokenSource（client_credentials）、
+// ローカル開発・CI は StaticTokenSource（devtoken）を app が選ぶ。
+type TokenProvider interface {
+	Token(ctx context.Context) (string, error)
+}
+
+// StaticTokenSource は固定トークンを返す（devtoken 用）。
+type StaticTokenSource string
+
+// Token は保持している値をそのまま返す。
+func (s StaticTokenSource) Token(context.Context) (string, error) { return string(s), nil }
 
 // TokenSource は client_credentials でトークンを取得し、期限までキャッシュする。
 type TokenSource struct {
@@ -81,9 +97,9 @@ func (t *TokenSource) Token(ctx context.Context) (string, error) {
 	return t.token, nil
 }
 
-// transport は Authorization を自動付与する RoundTripper。
+// transport は Authorization・Idempotency-Key・traceparent を自動付与する RoundTripper。
 type transport struct {
-	ts   *TokenSource
+	ts   TokenProvider
 	base http.RoundTripper
 }
 
@@ -95,10 +111,36 @@ func (tr *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// RoundTripper はリクエストを書き換えてはいけない規約なので複製する
 	clone := req.Clone(req.Context())
 	clone.Header.Set("Authorization", "Bearer "+tok)
+
+	// 冪等キー: 変更系は必ず付ける（internal-03 §9「いずれの枝でも冪等キーは必須」）。
+	// 呼び出し側が明示したキーは尊重する——リトライで同じキーを送り直すのは呼び出し側の
+	// 責任で、ここで毎回新しい UUID を振り直すと重複排除として機能しない（監査 C-7）。
+	if mutating(clone.Method) && clone.Header.Get("Idempotency-Key") == "" {
+		clone.Header.Set("Idempotency-Key", randomKey())
+	}
+
+	// トレース伝播: 受信リクエストの Correlation があれば traceparent で運ぶ
+	if c, ok := middleware.FromContext(clone.Context()); ok && c.TraceID != "" {
+		clone.Header.Set("traceparent", "00-"+c.TraceID+"-"+c.SpanID+"-01")
+	}
 	return tr.base.RoundTrip(clone)
 }
 
-// Client は TokenSource のトークンを自動付与する *http.Client を返す。
-func Client(ts *TokenSource) *http.Client {
+func mutating(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
+}
+
+func randomKey() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// Client は TokenProvider のトークン等を自動付与する *http.Client を返す。
+func Client(ts TokenProvider) *http.Client {
 	return &http.Client{Transport: &transport{ts: ts, base: http.DefaultTransport}, Timeout: 10 * time.Second}
 }

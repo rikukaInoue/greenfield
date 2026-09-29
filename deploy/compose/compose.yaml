@@ -205,8 +205,10 @@ services:
       GEAR_EXTERNAL_ADDR: ":8090"
       GEAR_INTERNAL_ADDR: ":8091"
       GEAR_ADMIN_ADDR: ":8092"
-      # gear はまだ自 database を使わない(Config に DSN が無い)。持ったら photo と同じ形で足す
+      GEAR_DSN: "gear_app:gear_app@tcp(mysql:3306)/gear?parseTime=true"
       LOCALAUTHZ_DSN: "localauthz:localauthz@tcp(mysql:3306)/localauthz"
+      # 作例は photo の internal リスナーから M2M で引く（4.1）
+      PHOTO_INTERNAL_URL: "http://photo:8081"
     ports:
       - "127.0.0.1:18090:8090"
       - "127.0.0.1:18091:8091"
