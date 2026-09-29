@@ -20,10 +20,18 @@ GEAR_BIN="${GEAR_BIN:-}"
 QUEUE_URL="${GEAR_EVENT_QUEUE_URL:-http://localhost:4566/000000000000/gear-photo-events.fifo}"
 LOCALSTACK="${LOCALSTACK_CONTAINER:-greenfield-localstack}"
 
-export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}"
-export AWS_REGION="${AWS_REGION:-us-east-1}"
-export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-test}"
-export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-testtest}"
+# AWS_ENDPOINT_URL=aws で**実 AWS**(7.3 の再演)。SDK の既定解決に任せ、資格情報も環境のものを使う
+REAL=0
+if [ "${AWS_ENDPOINT_URL:-}" = "aws" ]; then
+  REAL=1
+  unset AWS_ENDPOINT_URL
+  export AWS_REGION="${AWS_REGION:-ap-northeast-1}"
+else
+  export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}"
+  export AWS_REGION="${AWS_REGION:-us-east-1}"
+  export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-test}"
+  export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-testtest}"
+fi
 export ENV="${ENV:-dev}"
 
 fail=0
@@ -98,9 +106,15 @@ echo "4. 重複配送の無害化（#9）"
 # SQS の 5分窓の重複排除を迂回するため、MessageDeduplicationId だけ変えて同じイベントを送る。
 # **バスの重複排除ではなく inbox が弾いていることを見るための手順**
 BODY=$(python3 -c "import json;print(json.dumps({'id':'${EVENT_ID}','type':'photo.published.check','aggregate_id':'${AGG}','payload':{'id':9001}}))")
-docker exec "$LOCALSTACK" awslocal sqs send-message \
-  --queue-url "$QUEUE_URL" --message-body "$BODY" \
-  --message-group-id "$AGG" --message-deduplication-id "dup-${EVENT_ID}" >/dev/null
+if [ "$REAL" = 1 ]; then
+  aws sqs send-message \
+    --queue-url "$QUEUE_URL" --message-body "$BODY" \
+    --message-group-id "$AGG" --message-deduplication-id "dup-${EVENT_ID}" >/dev/null
+else
+  docker exec "$LOCALSTACK" awslocal sqs send-message \
+    --queue-url "$QUEUE_URL" --message-body "$BODY" \
+    --message-group-id "$AGG" --message-deduplication-id "dup-${EVENT_ID}" >/dev/null
+fi
 for i in $(seq 1 20); do
   grep -q '重複イベントをスキップ' "$tmp/consume.log" && break
   sleep 1
