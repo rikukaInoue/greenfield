@@ -11,7 +11,8 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
-import { requestIdContext, viewerContext } from "./context";
+import { newTraceContext } from "@greenfield/api-core/trace";
+import { requestIdContext, traceparentContext, viewerContext } from "./context";
 import { sessionStorage } from "./.server/session";
 import "./app.css";
 
@@ -20,6 +21,8 @@ const sessionMiddleware: Route.MiddlewareFunction = async ({ request, context },
   const subject = session.get("subject");
   context.set(viewerContext, subject ? { subject, aal: session.get("aal") ?? 1 } : null);
   context.set(requestIdContext, request.headers.get("X-Request-Id") ?? crypto.randomUUID());
+  // 1画面の API 呼び出し群を同じ trace-id で繋ぐ(#156)。受信値があれば引き継ぐ
+  context.set(traceparentContext, newTraceContext(request.headers.get("traceparent")));
   return next();
 };
 
