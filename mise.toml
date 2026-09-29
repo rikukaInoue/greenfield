@@ -53,7 +53,7 @@ run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exi
 
 [tasks.check]
 description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check + client:check（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "sqlc:check", "api:check", "client:check", "api:breaking:test"]
+depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "sqlc:check", "api:check", "client:check", "api:breaking:test"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -126,6 +126,10 @@ run = "dev/scripts/api-breaking.sh"
 [tasks."lint:imports"]
 description = "モジュール内の import 規律を検証する（replicaview / 差し込み口の実装）"
 run = 'for s in $(mise run services); do echo "== $s"; (cd $s && GOWORK=off golangci-lint run --config ../../.golangci.yml ./...) || exit 1; done'
+
+[tasks."lint:replaces"]
+description = "モジュール間 require の replace 漏れと、Dockerfile の COPY 漏れを検査(#163)"
+run = "dev/scripts/replace-check.sh"
 
 [tasks."lint:queries"]
 description = "クエリが自ドメインのテーブルだけを参照しているか検証（許可リスト = db/schema.sql）"
