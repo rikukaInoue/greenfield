@@ -374,3 +374,34 @@ func TestFromContextNeverNil(t *testing.T) {
 		t.Fatal("nil を返した。呼び出し側に nil チェックを強いてはいけない")
 	}
 }
+
+// 冪等キーはアクセスログに載る（同じ操作の試行同士を繋げる唯一の安定した識別子。
+// リトライは試行ごとに trace_id が変わるため trace では繋げない）。
+func TestIdempotencyKeyIsLogged(t *testing.T) {
+	var out strings.Builder
+	h := stack(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), &out)
+
+	req := httptest.NewRequest(http.MethodPost, "/photos", nil)
+	req.Header.Set("Idempotency-Key", "op-abc-123")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	// 無ければフィールド自体を出さない
+	var out2 strings.Builder
+	h2 := stack(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), &out2)
+	h2.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	for _, m := range lines(&out) {
+		if m["msg"] == "request" {
+			if m["http.request.header.idempotency-key"] != "op-abc-123" {
+				t.Errorf("冪等キーがログに無い: %v", m)
+			}
+		}
+	}
+	for _, m := range lines(&out2) {
+		if m["msg"] == "request" {
+			if _, ok := m["http.request.header.idempotency-key"]; ok {
+				t.Errorf("キー無しのリクエストに空フィールドが出ている: %v", m)
+			}
+		}
+	}
+}
