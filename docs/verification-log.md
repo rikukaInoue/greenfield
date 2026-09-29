@@ -55,3 +55,4 @@
 | 2026-09-29 | [ステージ 4.3 ReplicaView（#53） / チェック #10](verification-log/2026-09-29-stage-43.md) |
 | 2026-09-29 | [ステージ 4.4 同期コマンド（#54） / チェック #11](verification-log/2026-09-29-stage-44.md) |
 | 2026-09-30 | [ステージ 5.2 SSR 後半: confidential client（#56） / チェック #17](verification-log/2026-09-30-stage-52-oidc.md) |
+| 2026-09-30 | [トラフィック分割のローカル予行（#172）](verification-log/2026-09-30-traffic-split-drill.md) |

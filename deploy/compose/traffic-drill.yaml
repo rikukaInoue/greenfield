@@ -1,0 +1,68 @@
+# トラフィック分割のローカル予行（#172）。compose.yaml に重ねて使う:
+#
+#   dev/scripts/traffic-split-drill.sh   # 起動から検査まで一式
+#
+# photo を blue / green の2版で並走させ、Caddy の weighted_round_robin で
+# B/G 切替・カナリア重み・（手動）ロールバックを予行する。ECS ネイティブ機能の
+# 実機再演（7.2 #63）の前に、切替の観測方法と検査項目を固めるのが目的。
+#
+# どちらも dev モード（staticauthn / localauthz）。認証方式は分割の検証と直交する。
+services:
+  photo-blue:
+    image: greenfield/photo:local
+    container_name: greenfield-photo-blue
+    environment: &drill-photo-env
+      ENV: dev
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      PHOTO_EXTERNAL_ADDR: ":8080"
+      PHOTO_INTERNAL_ADDR: ":8081"
+      PHOTO_ADMIN_ADDR: ":8082"
+      PHOTO_DSN: "photo_app:photo_app@tcp(mysql:3306)/photo?parseTime=true"
+      LOCALAUTHZ_DSN: "localauthz:localauthz@tcp(mysql:3306)/localauthz"
+      FLAGD_HOST: flagd
+      FLAGD_PORT: "8015"
+      PHOTO_IMAGE_BUCKET: photo-images
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: "http://rustfs:9000"
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: testtest
+      SERVICE_REVISION: blue
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    healthcheck: &drill-photo-health
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  photo-green:
+    image: greenfield/photo:local
+    container_name: greenfield-photo-green
+    environment:
+      <<: *drill-photo-env
+      SERVICE_REVISION: green
+      # フェーズ c（壊れた版のカナリア）でだけ設定する。空なら注入なし
+      PHOTO_FAULT: ${PHOTO_FAULT:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    healthcheck: *drill-photo-health
+
+  caddy-drill:
+    image: caddy:2.10-alpine
+    container_name: greenfield-caddy-drill
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      # Caddyfile は drill スクリプトが重みを書いて生成する（.gitignore 済み）
+      - ./caddy/drill:/etc/caddy:ro
+    depends_on:
+      photo-blue:
+        condition: service_healthy
+      photo-green:
+        condition: service_healthy

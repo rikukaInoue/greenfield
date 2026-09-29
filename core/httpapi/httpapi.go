@@ -88,6 +88,12 @@ type Options struct {
 
 	// Middlewares は認証の後に適用する。
 	Middlewares []func(http.Handler) http.Handler
+
+	// Revision はこの**デプロイ**の識別子（例: ECS タスク定義リビジョン、イメージタグ）。
+	// 全応答に X-Service-Revision として載せる。カナリア・B/G で「どちらの版が
+	// 応答したか」を外から観測できないと、重み・切替・ロールバックの検証が成立しない
+	// （#172）。空なら Version を使う。
+	Revision string
 }
 
 // 基盤スタック（相関ID / アクセスログ / パニック復帰）は Options で選ばせず**必ず入れる**。
@@ -109,6 +115,18 @@ func New(l Listener, o Options) API {
 	problem.Install() // huma が生成するエラーにも code を載せる。Register より前に呼ぶ
 
 	r := chi.NewMux()
+	// リビジョンは全応答に載せる（healthz・401 含む）。認証より外に置くのは、
+	// カナリア検証がまさに「認証前に落ちる応答」も含めてどちらの版かを見るため
+	revision := o.Revision
+	if revision == "" {
+		revision = o.Version
+	}
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Service-Revision", revision)
+			next.ServeHTTP(w, req)
+		})
+	})
 	// 基盤スタックは認証より外。順序の理由は baseMiddlewares と middleware.Base を参照。
 	for _, m := range baseMiddlewares() {
 		r.Use(m)
