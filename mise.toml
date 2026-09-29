@@ -161,6 +161,16 @@ run = [
   'for s in $(mise run services); do n=$(basename $s); echo "== $n contract"; go run ./$s/cmd/$n migrate contract || exit 1; done',
 ]
 
+[tasks."obs:up"]
+description = "昇格シグナルの観測(prometheus + grafana)を立てる。ダッシュボード: http://127.0.0.1:3001 (#59)"
+dir = "deploy/compose"
+run = "docker compose --profile deploy --profile obs up -d --wait prometheus grafana"
+
+[tasks."obs:down"]
+description = "観測スタックを落とす"
+dir = "deploy/compose"
+run = "docker compose --profile obs rm -sf prometheus grafana"
+
 [tasks."tier2:up"]
 description = "Tier 2(Caddy + 本番アダプタの photo + authz)を起動(internal-07 / #55)"
 dir = "deploy/compose"

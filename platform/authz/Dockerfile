@@ -4,8 +4,10 @@ FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY core/go.mod core/go.sum ./core/
 COPY platform/authz/go.mod platform/authz/go.sum ./platform/authz/
+COPY telemetry/go.mod telemetry/go.sum ./telemetry/
 RUN cd platform/authz && GOWORK=off go mod download
 COPY core ./core
+COPY telemetry ./telemetry
 COPY platform/authz ./platform/authz
 RUN cd platform/authz && GOWORK=off CGO_ENABLED=0 go build -trimpath -o /out/authz ./cmd/authz
 

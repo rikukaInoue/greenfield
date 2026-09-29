@@ -1,6 +1,6 @@
 module github.com/rikukaInoue/greenfield/dev
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
@@ -16,15 +16,22 @@ require (
 
 require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/getkin/kin-openapi v0.142.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 // indirect
 	github.com/oapi-codegen/runtime v1.7.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
+	github.com/prometheus/client_golang v1.24.1 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/rikukaInoue/greenfield/services/photo-client v0.0.0 // indirect
+	github.com/rikukaInoue/greenfield/telemetry v0.0.0-00010101000000-000000000000 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
 	github.com/speakeasy-api/openapi v1.24.0 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
@@ -100,3 +107,5 @@ replace github.com/rikukaInoue/greenfield/services/gear => ../services/gear
 tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 
 replace github.com/rikukaInoue/greenfield/services/photo-client => ../services/photo-client
+
+replace github.com/rikukaInoue/greenfield/telemetry => ../telemetry

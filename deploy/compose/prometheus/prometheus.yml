@@ -1,0 +1,12 @@
+# 昇格シグナルの scrape(#59)。ターゲットはアプリの METRICS_ADDR(契約の面とは別ポート)。
+# サービスが起動していないターゲットは down と出るだけで害はない(tier2 の authz 等)。
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: photo
+    static_configs: [{ targets: ["photo:9091"] }]
+  - job_name: gear
+    static_configs: [{ targets: ["gear:9092"] }]
+  - job_name: authz
+    static_configs: [{ targets: ["authz:9093"] }]

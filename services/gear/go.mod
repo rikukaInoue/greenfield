@@ -1,6 +1,6 @@
 module github.com/rikukaInoue/greenfield/services/gear
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
@@ -10,6 +10,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/rikukaInoue/greenfield/core v0.0.0
 	github.com/rikukaInoue/greenfield/services/photo-client v0.0.0
+	github.com/rikukaInoue/greenfield/telemetry v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -29,13 +30,24 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.1 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-chi/chi/v5 v5.3.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oapi-codegen/runtime v1.7.0 // indirect
+	github.com/prometheus/client_golang v1.24.1 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 // モジュール間の依存はタグではなくreplaceで結ぶ（リポジトリ外から消費されるまでタグは打たない）。
 // 他サービスへの依存は <name>-client のみ許可。実装モジュールをここに書いてはならない。
 replace github.com/rikukaInoue/greenfield/core => ../../core
+
+replace github.com/rikukaInoue/greenfield/telemetry => ../../telemetry
 
 replace github.com/rikukaInoue/greenfield/services/photo-client => ../photo-client

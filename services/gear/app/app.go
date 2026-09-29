@@ -34,6 +34,7 @@ import (
 	"github.com/rikukaInoue/greenfield/services/gear/readmodel"
 	"github.com/rikukaInoue/greenfield/services/gear/repository"
 	"github.com/rikukaInoue/greenfield/services/gear/usecase"
+	"github.com/rikukaInoue/greenfield/telemetry"
 )
 
 // Version は OpenAPI の info.version。破壊的変更時のメジャー更新は oasdiff と連動させる
@@ -57,6 +58,8 @@ type Config struct {
 	ExternalAddr string
 	InternalAddr string
 	AdminAddr    string
+	// MetricsAddr は /metrics の待ち受け(例 :9092)。空なら公開しない(#59)
+	MetricsAddr string
 	// LocalAuthzDSN は擬似ReBACのタプル置き場。サービスのDBとは別（本番の authzサービス相当）。
 	LocalAuthzDSN string
 	// DSN は gear の業務データ。アプリ実行用のユーザーで接続する。
@@ -81,6 +84,7 @@ type M2MConfig struct {
 // 既定はポート割当表のとおり :8080 / :8081 / :8082。
 func ConfigFromEnv() Config {
 	return Config{
+		MetricsAddr:      os.Getenv("METRICS_ADDR"),
 		ExternalAddr:     envOr("GEAR_EXTERNAL_ADDR", ":8090"),
 		InternalAddr:     envOr("GEAR_INTERNAL_ADDR", ":8091"),
 		AdminAddr:        envOr("GEAR_ADMIN_ADDR", ":8092"),
@@ -106,6 +110,9 @@ type Deps struct {
 	Assurance     authz.AssuranceChecker
 	Commands      *usecase.ItemCommands
 	Queries       *usecase.ItemQueries
+
+	// DB は業務データのプール。合成ルートが昇格シグナル(プール使用率)の観測に使う(#59)
+	DB *sql.DB
 
 	closers []func() error
 }
@@ -155,6 +162,7 @@ func LocalDeps(_ context.Context, cfg Config) (*Deps, error) {
 		Assurance:     simpleassurance.New(),
 		Commands:      usecase.NewItemCommands(consistency.NewAtomic(gearDB), repository.NewItemRepository(gearDB)),
 		Queries:       usecase.NewItemQueries(readmodel.NewItemReader(gearDB), photos),
+		DB:            gearDB,
 		closers:       []func() error{db.Close, gearDB.Close},
 	}, nil
 }
@@ -183,6 +191,7 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 		Assurance:     simpleassurance.New(),
 		Commands:      usecase.NewItemCommands(consistency.NewAtomic(gearDB), repository.NewItemRepository(gearDB)),
 		Queries:       usecase.NewItemQueries(readmodel.NewItemReader(gearDB), photos),
+		DB:            gearDB,
 		closers:       []func() error{gearDB.Close},
 	}, nil
 }
@@ -238,6 +247,13 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer deps.Close()
+
+	// 昇格シグナルのメトリクス(#59)。photo と同じ規約(専用ポート、未設定なら出さない)
+	if cfg.MetricsAddr != "" && deps.DB != nil {
+		reg := telemetry.New("gear")
+		reg.ObservePool("gear", deps.DB)
+		reg.Serve(ctx, cfg.MetricsAddr)
+	}
 	return RunWith(ctx, cfg, deps)
 }
 

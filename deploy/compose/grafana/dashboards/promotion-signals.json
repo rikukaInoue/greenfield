@@ -1,0 +1,129 @@
+{
+ "title": "昇格シグナル (greenfield)",
+ "uid": "promotion-signals",
+ "timezone": "browser",
+ "refresh": "5s",
+ "time": {
+  "from": "now-15m",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "timeseries",
+   "title": "DB プール使用率",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "db_pool_in_use",
+     "legendFormat": "{{service}} in_use",
+     "refId": "A"
+    },
+    {
+     "expr": "db_pool_open",
+     "legendFormat": "{{service}} open",
+     "refId": "B"
+    },
+    {
+     "expr": "db_pool_max",
+     "legendFormat": "{{service}} max",
+     "refId": "C"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "type": "timeseries",
+   "title": "DB プール接続待ち(rate)",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "rate(db_pool_wait_total[1m])",
+     "legendFormat": "{{service}} waits/s",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "type": "timeseries",
+   "title": "authz レイテンシ (p50 / p99)",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service=\"authz\"}[1m])))",
+     "legendFormat": "p50",
+     "refId": "A"
+    },
+    {
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service=\"authz\"}[1m])))",
+     "legendFormat": "p99",
+     "refId": "B"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "timeseries",
+   "title": "outbox 滞留 (未送信件数 / 最古の滞留秒)",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "outbox_pending",
+     "legendFormat": "{{service}} pending",
+     "refId": "A"
+    },
+    {
+     "expr": "outbox_oldest_age_seconds",
+     "legendFormat": "{{service}} oldest age (s)",
+     "refId": "B"
+    }
+   ]
+  }
+ ],
+ "schemaVersion": 39
+}
