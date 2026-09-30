@@ -80,7 +80,7 @@ func (t *Tracer) TracerProvider() trace.TracerProvider {
 	return t.tp
 }
 
-// Shutdown は未送信の span を吐き切って止める(排水の一部として呼ぶ)。
+// Shutdown は未送信の span を吐き切って止める(graceful shutdown の一部として呼ぶ)。
 func (t *Tracer) Shutdown(ctx context.Context) error {
 	if !t.enabled {
 		return nil

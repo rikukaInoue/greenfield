@@ -34,7 +34,7 @@ func NewRelay(db *sql.DB, bus Bus) *Relay {
 	return &Relay{db: db, bus: bus, Batch: 100, MaxAttempts: 8}
 }
 
-// Run は interval ごとに RunOnce を繰り返す。ctx のキャンセルで**排水して**抜ける。
+// Run は interval ごとに RunOnce を繰り返す。ctx のキャンセルで**処理中のバッチを完了させてから**抜ける。
 //
 // 処理中のバッチは停止指示が来ても完走させる(10.8)。途中で切ると「バスへは送れたが
 // published_at を記録できない」が起こり、次回起動時に自作の重複配送を生む
@@ -70,7 +70,7 @@ func (r *Relay) drainTimeout() time.Duration {
 	return 20 * time.Second
 }
 
-// logDrain は停止時に未送信の残数を記録する。「排水して止まった」ことと
+// logDrain は停止時に未送信の残数を記録する。「処理中を完了させて止まった」ことと
 // 残作業の量を、停止のたびに観測可能にする(10.8)。
 func (r *Relay) logDrain(ctx context.Context) {
 	qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
@@ -78,10 +78,10 @@ func (r *Relay) logDrain(ctx context.Context) {
 	var n int
 	if err := r.db.QueryRowContext(qctx,
 		"SELECT COUNT(*) FROM outbox WHERE published_at IS NULL").Scan(&n); err != nil {
-		slog.Warn("relay: 排水して停止(未送信数は取得できず)", "error", err)
+		slog.Warn("relay: 処理中を完了させて停止(未送信数は取得できず)", "error", err)
 		return
 	}
-	slog.Info("relay: 排水して停止", "unsent", n)
+	slog.Info("relay: 処理中を完了させて停止", "unsent", n)
 }
 
 // RunOnce は未送信イベントを id 順に送る。送れた件数を返す。

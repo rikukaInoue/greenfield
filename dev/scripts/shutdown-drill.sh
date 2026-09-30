@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 排水(グレースフルシャットダウン)のドリル(10.8 / #222)。
+# グレースフルシャットダウンのドリル(10.8 / #222)。
 #
 # 確かめること:
-#   A. serve: SIGTERM 後も処理中のリクエストは完走する(全部 201)。排水完了ログが出る
+#   A. serve: SIGTERM 後も処理中のリクエストは完走する(全部 201)。完了ログが出る
 #   B. serve: SIGKILL だと処理中が切断される(= A が守っているものの実証。破ってみせる)
 #   C. relay: SIGTERM で処理中のバッチを完走させ、context canceled を出さず、
 #      未送信の残数を記録して exit 0 で止まる
-#   D. consumer: SIGTERM で受信済みを処理しきってから止まる。全量ドレイン後、
-#      inbox は全件・重複スキップ 0(排水が自作の再配信を作らないこと)
+#   D. consumer: SIGTERM で受信済みを処理しきってから止まる。全件を流し終えた後、
+#      inbox は全件・重複スキップ 0(停止が再配信を自作しないこと)
 #
 # 前提: mysql(13306) / localstack(4566) 起動済み、photo / gear マイグレーション適用済み。
 set -uo pipefail
@@ -86,8 +86,8 @@ else
   ng "完走しなかった: codes=$(cat "$tmp"/code* | paste -sd, -)"
 fi
 wait "$serve_pid" 2>/dev/null
-grep -q '排水完了' "$tmp/serve.log" && ok "排水完了ログあり" || ng "排水完了ログが無い"
-grep -q '"clean":true\|clean=true' "$tmp/serve.log" && ok "clean=true" || ng "clean=true でない: $(grep 排水 "$tmp/serve.log")"
+grep -q 'graceful shutdown 完了' "$tmp/serve.log" && ok "完了ログあり" || ng "完了ログが無い"
+grep -q '"clean":true\|clean=true' "$tmp/serve.log" && ok "clean=true" || ng "clean=true でない: $(grep "graceful shutdown" "$tmp/serve.log")"
 
 echo "B. serve: SIGKILL は処理中を切断する(A が守っているものの実証)"
 start_bg "$tmp/serve2.log" "${SERVE_ENV[@]}" PHOTO_FAULT=before_commit=3s "$PHOTO_BIN"
@@ -99,7 +99,7 @@ kill -9 "$serve_pid"
 dropped=0
 for p in $reqpids; do wait "$p" || dropped=$((dropped + 1)); done
 if [ "$dropped" -gt 0 ]; then
-  ok "SIGKILL では ${dropped}/8 が切断された(排水が守っている実害の実証)"
+  ok "SIGKILL では ${dropped}/8 が切断された(graceful shutdown が守っている実害の実証)"
 else
   ng "SIGKILL でも全部成功してしまった(ドリルの前提が崩れている)"
 fi
@@ -118,7 +118,7 @@ kill -TERM "$relay_pid"
 wait "$relay_pid"; relay_rc=$?
 [ "$relay_rc" = 0 ] && ok "exit 0 で停止(SIGTERM を異常扱いしない)" || ng "exit=$relay_rc"
 grep -q 'context canceled' "$tmp/relay.log" && ng "context canceled が出ている(バッチが中断された)" || ok "context canceled なし(バッチ完走)"
-grep -q '排水して停止' "$tmp/relay.log" && ok "残数の記録あり: $(grep -o '"unsent":[0-9]*' "$tmp/relay.log" | tail -1)" || ng "排水ログが無い"
+grep -q '処理中を完了させて停止' "$tmp/relay.log" && ok "残数の記録あり: $(grep -o '"unsent":[0-9]*' "$tmp/relay.log" | tail -1)" || ng "停止ログが無い"
 sent=$(${MYSQL} -N photo -e "SELECT COUNT(*) FROM outbox WHERE aggregate_id LIKE 'photo:95%' AND published_at IS NOT NULL;")
 unsent=$(${MYSQL} -N photo -e "SELECT COUNT(*) FROM outbox WHERE aggregate_id LIKE 'photo:95%' AND published_at IS NULL;")
 [ $((sent + unsent)) = 150 ] && ok "帳尻一致(送信済み $sent + 未送信 $unsent = 150)" || ng "帳尻が合わない: $sent + $unsent"
@@ -131,7 +131,7 @@ kill -TERM "$c_pid"
 wait "$c_pid"; c_rc=$?
 [ "$c_rc" = 0 ] && ok "exit 0 で停止" || ng "exit=$c_rc"
 grep -q 'context canceled' "$tmp/consume1.log" && ng "context canceled が出ている" || ok "context canceled なし(受信済みを完走)"
-grep -q '排水して停止' "$tmp/consume1.log" && ok "排水ログあり" || ng "排水ログが無い"
+grep -q '処理中を完了させて停止' "$tmp/consume1.log" && ok "停止ログあり" || ng "停止ログが無い"
 # 残りを全部流す(relay 再開 → 全送信、consumer 再開 → 全適用)
 start_bg "$tmp/relay2.log" RELAY_INTERVAL=1s "$PHOTO_BIN" relay
 relay2=$last_pid
@@ -145,7 +145,7 @@ done
 kill -TERM "$relay2" "$c2" 2>/dev/null; wait "$relay2" "$c2" 2>/dev/null
 [ "$n" = 150 ] && ok "最終的に inbox は 150 件(取り残しゼロ)" || ng "inbox が $n 件"
 skips=$(cat "$tmp"/consume*.log | grep -c '重複イベントをスキップ' || true)
-[ "${skips:-0}" = 0 ] && ok "重複スキップ 0(排水が再配信を自作していない)" || ng "重複スキップが $skips 回(排水になっていない)"
+[ "${skips:-0}" = 0 ] && ok "重複スキップ 0(停止が再配信を自作していない)" || ng "重複スキップが $skips 回(処理中を完了させずに止まっている)"
 
 echo
 if [ "$fail" = 0 ]; then

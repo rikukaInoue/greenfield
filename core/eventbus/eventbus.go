@@ -97,7 +97,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				// 受信済み分は RunOnce が完走させている。正常な停止は nil
 				// (SIGTERM での終了を異常扱いして exit 1 にしない)
-				slog.InfoContext(ctx, "consumer: 排水して停止")
+				slog.InfoContext(ctx, "consumer: 処理中を完了させて停止")
 				return nil
 			}
 			slog.ErrorContext(ctx, "consumer: 受信に失敗", "error", err)
