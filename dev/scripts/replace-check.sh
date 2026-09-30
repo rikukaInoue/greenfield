@@ -45,10 +45,18 @@ for mod in $gomods; do
   replaces=$(grep -E "^replace ${MODULE_PREFIX}" "$mod" | awk "{print \$2}" | sort -u || true)
   for req in $requires; do
     checked_requires=$((checked_requires + 1))
-    if ! echo "$replaces" | grep -qx "$req"; then
+    # 判定はパイプを使わず bash 内で行う。以前の `echo "$replaces" | grep -qx` は
+    # set -o pipefail の下で稀に偽NGを出した(3回再現。自己診断ログで「変数には
+    # 該当行が在るのに不一致」を確認)。grep -q はマッチ即終了で書き手が SIGPIPE(141)
+    # になり得て、pipefail がそれをパイプ全体の失敗として拾う
+    found=0
+    while IFS= read -r r; do
+      if [ "$r" = "$req" ]; then found=1; break; fi
+    done <<EOF
+$replaces
+EOF
+    if [ "$found" -eq 0 ]; then
       ng "$mod: $req の replace が無い(公開版を黙って拾う)"
-      # flaky 調査(#204系: replace が実在するのに稀に見落とす報告が2件)。
-      # 再現時に「その瞬間の grep が何を見たか」を残す
       echo "  -- debug: $mod の replace 行 --" >&2
       grep -n "^replace" "$mod" >&2 || echo "  (grep が replace 行を0件返した)" >&2
       echo "  -- debug: 抽出済み replaces --" >&2
