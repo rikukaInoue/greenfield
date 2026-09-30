@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql" // localauthz ストアへの接続に使う driver は合成ルートが選ぶ
@@ -275,7 +276,10 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			return float64(n)
 		})
-		reg.Serve(ctx, cfg.MetricsAddr)
+		// メトリクスは排水の間も見えていてほしい(photo 側と同じ)
+		metricsCtx, stopMetrics := context.WithCancel(context.WithoutCancel(ctx))
+		defer stopMetrics()
+		reg.Serve(metricsCtx, cfg.MetricsAddr)
 	}
 	return RunWith(ctx, cfg, deps)
 }
@@ -321,12 +325,33 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 	case cause = <-errc:
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 排水(10.8): photo 側と同じ。リスナー → DB の順で閉じ、失敗は警告に出す
+	start := time.Now()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(envIntOr("SHUTDOWN_TIMEOUT_SECONDS", 25))*time.Second)
 	defer cancel()
+	clean := true
 	for _, s := range servers {
-		_ = s.Shutdown(shutdownCtx)
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			clean = false
+			slog.Warn("排水しきれなかった(処理中のリクエストが切断された可能性)",
+				"server.address", s.Addr, "error", err)
+		}
 	}
+	if deps.DB != nil {
+		_ = deps.DB.Close()
+	}
+	slog.Info("排水完了", "duration", time.Since(start).String(), "clean", clean)
 	return cause
+}
+
+func envIntOr(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func envOr(key, def string) string {

@@ -24,6 +24,9 @@ type Relay struct {
 	// MaxAttempts を超えたイベントは削除せずエラー状態として残す（監視対象。
 	// 失われた通知は障害対応の起点になるため黙って捨てない）。
 	MaxAttempts int
+	// DrainTimeout は停止時に処理中のバッチを完走させる上限。ゼロなら 20 秒。
+	// ハングしたバスが停止をブロックし続けるのを防ぐ(10.8)。
+	DrainTimeout time.Duration
 }
 
 // NewRelay は db の outbox を bus へ送る Relay を返す。
@@ -31,12 +34,20 @@ func NewRelay(db *sql.DB, bus Bus) *Relay {
 	return &Relay{db: db, bus: bus, Batch: 100, MaxAttempts: 8}
 }
 
-// Run は interval ごとに RunOnce を繰り返す。ctx のキャンセルで抜ける。
+// Run は interval ごとに RunOnce を繰り返す。ctx のキャンセルで**排水して**抜ける。
+//
+// 処理中のバッチは停止指示が来ても完走させる(10.8)。途中で切ると「バスへは送れたが
+// published_at を記録できない」が起こり、次回起動時に自作の重複配送を生む
+// (inbox が吸収するとはいえ避けられる重複)。正常な停止は nil を返す
+// (SIGTERM での終了を異常扱いして exit 1 にしない)。
 func (r *Relay) Run(ctx context.Context, interval time.Duration) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
-		if n, err := r.RunOnce(ctx); err != nil {
+		batchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.drainTimeout())
+		n, err := r.RunOnce(batchCtx)
+		cancel()
+		if err != nil {
 			// 一時的な失敗（バス不通等）は次の周期で再試行する。ここで死ぬと
 			// 「relay の停止」が増えるだけで何も良くならない
 			slog.ErrorContext(ctx, "relay: 送信に失敗", "error", err)
@@ -45,10 +56,32 @@ func (r *Relay) Run(ctx context.Context, interval time.Duration) error {
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			r.logDrain(ctx)
+			return nil
 		case <-t.C:
 		}
 	}
+}
+
+func (r *Relay) drainTimeout() time.Duration {
+	if r.DrainTimeout > 0 {
+		return r.DrainTimeout
+	}
+	return 20 * time.Second
+}
+
+// logDrain は停止時に未送信の残数を記録する。「排水して止まった」ことと
+// 残作業の量を、停止のたびに観測可能にする(10.8)。
+func (r *Relay) logDrain(ctx context.Context) {
+	qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	var n int
+	if err := r.db.QueryRowContext(qctx,
+		"SELECT COUNT(*) FROM outbox WHERE published_at IS NULL").Scan(&n); err != nil {
+		slog.Warn("relay: 排水して停止(未送信数は取得できず)", "error", err)
+		return
+	}
+	slog.Info("relay: 排水して停止", "unsent", n)
 }
 
 // RunOnce は未送信イベントを id 順に送る。送れた件数を返す。

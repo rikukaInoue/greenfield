@@ -79,6 +79,8 @@ type Consumer struct {
 	Handler Handler
 	// WaitSeconds はロングポーリングの待ち時間。
 	WaitSeconds int32
+	// DrainTimeout は停止時に受信済みメッセージの処理を完走させる上限。ゼロなら 20 秒(10.8)。
+	DrainTimeout time.Duration
 }
 
 // NewConsumer は queueURL を購読する Consumer を返す。
@@ -93,7 +95,10 @@ func (c *Consumer) Run(ctx context.Context) error {
 	for {
 		if err := c.RunOnce(ctx); err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				// 受信済み分は RunOnce が完走させている。正常な停止は nil
+				// (SIGTERM での終了を異常扱いして exit 1 にしない)
+				slog.InfoContext(ctx, "consumer: 排水して停止")
+				return nil
 			}
 			slog.ErrorContext(ctx, "consumer: 受信に失敗", "error", err)
 			// バス不通等。少し待って続ける
@@ -116,23 +121,35 @@ func (c *Consumer) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("consumer: receive: %w", err)
 	}
+	// 受信待ち(ロングポーリング)は ctx で中断してよいが、**受信済みメッセージの処理は
+	// 完走させる**(10.8)。途中で切ると「業務処理は済んだのに削除できない」が起こり、
+	// 可視性タイムアウト後の再配信=自作の重複を生む(inbox が吸収するとはいえ避けられる)。
+	procCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.drainTimeout())
+	defer cancel()
 	for _, m := range out.Messages {
 		var env envelope
 		if err := json.Unmarshal([]byte(aws.ToString(m.Body)), &env); err != nil {
 			// 読めないメッセージは再配信しても読めない。ログに残して削除する
 			// （DLQ は実機再演 7.3 で扱う）
-			slog.ErrorContext(ctx, "consumer: 読めないメッセージ", "error", err, "body", aws.ToString(m.Body))
-			c.delete(ctx, m.ReceiptHandle)
+			slog.ErrorContext(procCtx, "consumer: 読めないメッセージ", "error", err, "body", aws.ToString(m.Body))
+			c.delete(procCtx, m.ReceiptHandle)
 			continue
 		}
 		ev := consistency.Event{ID: env.ID, Type: env.Type, AggregateID: env.AggregateID, Payload: env.Payload}
-		if err := c.Handler(ctx, ev); err != nil {
-			slog.ErrorContext(ctx, "consumer: 処理に失敗（再配信に任せる）", "event_id", ev.ID, "error", err)
+		if err := c.Handler(procCtx, ev); err != nil {
+			slog.ErrorContext(procCtx, "consumer: 処理に失敗（再配信に任せる）", "event_id", ev.ID, "error", err)
 			continue
 		}
-		c.delete(ctx, m.ReceiptHandle)
+		c.delete(procCtx, m.ReceiptHandle)
 	}
 	return nil
+}
+
+func (c *Consumer) drainTimeout() time.Duration {
+	if c.DrainTimeout > 0 {
+		return c.DrainTimeout
+	}
+	return 20 * time.Second
 }
 
 func (c *Consumer) delete(ctx context.Context, receipt *string) {
