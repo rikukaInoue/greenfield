@@ -176,6 +176,10 @@ run = 'cfg=$PWD/.golangci.yml; for s in $(mise run modules); do echo "== $s"; (c
 description = "共有依存のバージョン乖離を観測する(#205)。警告のみ(exit 0)——fail にすると依存更新 PR が片側から通せない。締めるなら -strict"
 run = "go run ./dev/driftcheck"
 
+[tasks."audit:checks"]
+description = "検査の検査: 検査ツール自身の回帰テストを一括実行(#226。四半期 + 手動)"
+run = "dev/scripts/meta-audit.sh"
+
 [tasks."lint:alerts"]
 description = "アラートルールの単体テスト(promtool)。閾値を跨ぐ系列で発火する/しないを機械検証(#224)"
 run = "docker run --rm -v ./deploy/compose/prometheus:/w --entrypoint promtool prom/prometheus:v3.9.1 test rules /w/alerts_test.yml"

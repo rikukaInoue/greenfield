@@ -151,3 +151,28 @@ OTel SDK は `telemetry` に置き、**core には入れない**（`core/middlew
 **Dependabot alerts と govulncheck の判定が食い違ったら govulncheck を採る。** alerts は依存グラフだけを見て到達性を見ないため、呼ばれないコードパスの CVE も鳴らす。その alert は「govulncheck で到達不能」と理由を書いて Dismiss する（黙って消さない——理由の無い Dismiss は次に見た人が再調査する）。逆に govulncheck だけが鳴るケース（Go toolchain 自体の CVE）は依存でなく mise.toml の go を上げる。
 
 Dependabot PR の自動マージは**まだ有効にしない**。自動マージの前提は「壊れた更新でテストが本当に落ちること」で、認可の総当たりテスト（#182）が入るまでは、検査ではなく自動デプロイの穴になる。有効化するとしても patch のみ・minor 以上は人間が読む。
+
+
+### 10.10 検査自体の運用（flaky 隔離・検査の回帰テスト・定期監査）
+
+「判断を消して手順にした」設計は、手順（ゲート・CI・計器）が信用を失った瞬間に崩れる——全員が bypass を探し始めるため。ここは**検査そのものの運用**を定める（#226）。
+
+**ゲート・検査が誤検知（flaky）したときの規律。**
+1. 隔離は「無効化」ではなく**非ブロッキング化**（warn で走らせ続ける）。観測を止めると再発の証拠が消える
+2. 隔離には **issue と期限を必須**にする（Release フラグの期限規律と同型。期限なしの隔離は静かな無効化）
+3. bypass の経路は1つだけ（PR に理由を書いて隔離コミットを入れる）。個人の判断で検査を避ける経路（force merge 等）を作らない
+4. 復帰条件は「原因の特定」であって「しばらく緑だった」ではない
+
+**検査の回帰テストの台帳。** 検査を足すときは「破ってみせる手段」を同時に足す。現状:
+
+| 検査 | 自身の回帰テスト | 実行 |
+|---|---|---|
+| affected（CI の発火判定） | Go テスト（ADR 0015: 判定ミス=全モジュール検査漏れ） | audit:checks |
+| api-breaking / baseline-diff | セルフテスト（落ちるべき形を含む） | audit:checks |
+| アラートルール | promtool 単体テスト（発火する/しないの両側） | lint:alerts（check 常設） |
+| 昇格ゲートの判定 | Python 単体テスト（healthz 緑・書き込み500 を落とす等） | audit:checks |
+| querylint | Go テスト | audit:checks |
+| fk:check / replace-check / secure-defaults | **変異ドリル**（違反を作って検査が落ちることを見る。導入時に実施済み） | 定期監査時に手動再実施 |
+| eventual-check / 各種ドリル | fail closed 構造（前提欠如で失敗）+ 導入時の変異確認 | 同上 |
+
+**定期監査。** `mise run audit:checks`（検査ツール自身の回帰テスト一括）を**四半期の scheduled workflow**（.github/workflows/audit.yml）で回し、落ちたら issue が自動で立つ。audit-2026-09-27 のような「主張と機械の乖離」の棚卸しは、この定期実行をトリガーに人間が行う（scheduled run が赤いまま放置される形にしない——通知先が issue なのはそのため）。
