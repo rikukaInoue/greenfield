@@ -13,6 +13,7 @@ terraform {
   required_version = ">= 1.5"
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 6.0" }
+    tls = { source = "hashicorp/tls", version = "~> 4.0" }
   }
 }
 
@@ -75,6 +76,12 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   egress {
     from_port   = 0
     to_port     = 0
@@ -132,10 +139,62 @@ resource "aws_db_instance" "mysql" {
   apply_immediately      = true
   # 公開しない。ブートストラップ(init SQL)も migrate も VPC 内の one-off ECS タスクで
   # 実行する(migrate は本番も ECS タスクで流す形なので、その形の予行にもなる)
-  publicly_accessible    = false
+  publicly_accessible = false
+  # 保存時暗号化は既定(#212)。今どき無効にする理由がない
+  storage_encrypted = true
 }
 
 variable "db_password" { sensitive = true }
+
+# --- 秘密は SSM SecureString 経由で注入する(#210) -----------------------------
+# taskdef の environment に平文で置くと、DescribeTaskDefinition・コンソール・
+# tf plan の全部に露出する。ECS の secrets(valueFrom)なら実行時にだけ解決される。
+resource "aws_ssm_parameter" "photo_dsn" {
+  name  = "/greenfield/71/photo-dsn"
+  type  = "SecureString"
+  value = "photo_app:${var.db_password}@tcp(${aws_db_instance.mysql.address}:3306)/photo?parseTime=true"
+}
+
+resource "aws_ssm_parameter" "localauthz_dsn" {
+  name  = "/greenfield/71/localauthz-dsn"
+  type  = "SecureString"
+  value = "localauthz:${var.db_password}@tcp(${aws_db_instance.mysql.address}:3306)/localauthz"
+}
+
+resource "aws_ssm_parameter" "photo_migrate_dsn" {
+  name  = "/greenfield/71/photo-migrate-dsn"
+  type  = "SecureString"
+  value = "photo_migrate:${var.db_password}@tcp(${aws_db_instance.mysql.address}:3306)/photo?parseTime=true&multiStatements=true"
+}
+
+resource "aws_ssm_parameter" "db_root_password" {
+  name  = "/greenfield/71/db-root-password"
+  type  = "SecureString"
+  value = var.db_password
+}
+
+data "aws_kms_alias" "ssm" { name = "alias/aws/ssm" }
+
+resource "aws_iam_role_policy" "task_exec_ssm" {
+  name = "ssm-secrets"
+  role = aws_iam_role.task_exec.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = ["ssm:GetParameters"],
+        Resource = [
+          aws_ssm_parameter.photo_dsn.arn,
+          aws_ssm_parameter.localauthz_dsn.arn,
+          aws_ssm_parameter.photo_migrate_dsn.arn,
+          aws_ssm_parameter.db_root_password.arn,
+        ]
+      },
+      { Effect = "Allow", Action = ["kms:Decrypt"], Resource = [data.aws_kms_alias.ssm.target_key_arn] }
+    ]
+  })
+}
 
 # --- ECR(先に -target で作ってイメージを push してから全体 apply する) ------
 resource "aws_ecr_repository" "photo" {
@@ -152,9 +211,9 @@ resource "aws_cloudwatch_log_group" "photo" {
 }
 
 resource "aws_iam_role" "task_exec" {
-  name               = "greenfield-71-task-exec"
+  name = "greenfield-71-task-exec"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
+    Version   = "2012-10-17",
     Statement = [{ Effect = "Allow", Principal = { Service = "ecs-tasks.amazonaws.com" }, Action = "sts:AssumeRole" }]
   })
 }
@@ -195,8 +254,6 @@ locals {
     { name = "PHOTO_INTERNAL_ADDR", value = ":8081" },
     { name = "PHOTO_ADMIN_ADDR", value = ":8082" },
     { name = "METRICS_ADDR", value = ":9091" },
-    { name = "PHOTO_DSN", value = "photo_app:${var.db_password}@tcp(${aws_db_instance.mysql.address}:3306)/photo?parseTime=true" },
-    { name = "LOCALAUTHZ_DSN", value = "localauthz:${var.db_password}@tcp(${aws_db_instance.mysql.address}:3306)/localauthz" },
     { name = "PHOTO_IMAGE_BUCKET", value = aws_s3_bucket.images.bucket },
     { name = "AWS_REGION", value = var.region },
     { name = "FLAGS_SOURCE", value = "file" },
@@ -221,11 +278,19 @@ resource "aws_ecs_task_definition" "photo" {
     operating_system_family = "LINUX"
   }
   container_definitions = jsonencode([{
-    name      = "photo"
-    image     = var.image
-    essential = true
+    name         = "photo"
+    image        = var.image
+    essential    = true
     portMappings = [{ containerPort = 8080 }]
     environment  = local.photo_env
+    # 秘密は environment でなく secrets(実行時に SSM から解決。#210)
+    secrets = [
+      { name = "PHOTO_DSN", valueFrom = aws_ssm_parameter.photo_dsn.arn },
+      { name = "LOCALAUTHZ_DSN", valueFrom = aws_ssm_parameter.localauthz_dsn.arn },
+      { name = "PHOTO_MIGRATE_DSN", valueFrom = aws_ssm_parameter.photo_migrate_dsn.arn },
+    ]
+    # 書けるファイルシステムを持たない(#213)。ログは stdout、状態は DB/S3
+    readonlyRootFilesystem = true
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -255,6 +320,9 @@ resource "aws_ecs_task_definition" "bootstrap" {
     image     = "public.ecr.aws/docker/library/mysql:8.4"
     essential = true
     command   = ["sh", "-c", "echo bootstrap-noop"]
+    # mysql クライアントは MYSQL_PWD を自動で使う。run-task の command に -p を書くと
+    # DescribeTasks の履歴に平文で残る(#210)ため、パスワードは secrets で注入する
+    secrets = [{ name = "MYSQL_PWD", valueFrom = aws_ssm_parameter.db_root_password.arn }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -280,8 +348,8 @@ resource "aws_lb_target_group" "photo" {
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
   health_check {
-    path     = "/healthz"
-    interval = 10
+    path              = "/healthz"
+    interval          = 10
     healthy_threshold = 2
   }
   # B/G(7.2)がターゲットグループを2枚使うのでここでは1枚に留める
@@ -301,10 +369,34 @@ resource "aws_lb_target_group" "photo_alt" {
   }
 }
 
-resource "aws_lb_listener" "http" {
+# 検証用の TLS(#211)。自己署名を ACM にインポートし、リスナー・リダイレクト・SG の
+# 配線を実測する(ドメイン非依存。信頼チェーンは検証対象外なので確認は curl -k)。
+# 本番は ACM 発行 + DNS 検証の証明書に置き換えるだけで、配線は同じ。
+resource "tls_private_key" "alb" {
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+resource "tls_self_signed_cert" "alb" {
+  private_key_pem       = tls_private_key.alb.private_key_pem
+  validity_period_hours = 72
+  allowed_uses          = ["key_encipherment", "digital_signature", "server_auth"]
+  subject {
+    common_name = "greenfield-71.invalid"
+  }
+}
+
+resource "aws_acm_certificate" "alb" {
+  private_key      = tls_private_key.alb.private_key_pem
+  certificate_body = tls_self_signed_cert.alb.cert_pem
+}
+
+resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
-  port              = 80
-  protocol          = "HTTP"
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate.alb.arn
   # 既定は 404 の固定応答。実トラフィックは下の**ルール**が運ぶ
   # (ECS ネイティブ B/G は「リスナールール」を操作するため、default_action では管理できない)
   default_action {
@@ -317,8 +409,23 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# 80 は受けるが運ばない。Bearer トークンが平文 HTTP を流れる経路を残さない(#211)
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
 resource "aws_lb_listener_rule" "photo" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 10
   action {
     type             = "forward"
@@ -335,9 +442,9 @@ resource "aws_lb_listener_rule" "photo" {
 
 # ECS が ELB を操作するためのインフラロール(ネイティブ B/G の要件)
 resource "aws_iam_role" "ecs_infra" {
-  name               = "greenfield-71-ecs-infra"
+  name = "greenfield-71-ecs-infra"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
+    Version   = "2012-10-17",
     Statement = [{ Effect = "Allow", Principal = { Service = "ecs.amazonaws.com" }, Action = "sts:AssumeRole" }]
   })
 }

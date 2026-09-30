@@ -102,6 +102,7 @@ resource "aws_rds_cluster" "aurora" {
   vpc_security_group_ids = [aws_security_group.db.id]
   skip_final_snapshot    = true # 使い捨て。データに価値を持たせない
   apply_immediately      = true
+  storage_encrypted      = true # 保存時暗号化は既定(#212)
 }
 
 resource "aws_rds_cluster_instance" "writer" {

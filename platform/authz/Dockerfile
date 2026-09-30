@@ -13,5 +13,8 @@ RUN cd platform/authz && GOWORK=off CGO_ENABLED=0 go build -trimpath -o /out/aut
 
 FROM alpine:3.22
 RUN apk add --no-cache curl ca-certificates
+# root で動かす理由がない(#213)。専用の非特権ユーザーで実行する
+RUN adduser -D -H -u 65532 app
+USER app
 COPY --from=build /out/authz /usr/local/bin/authz
 ENTRYPOINT ["/usr/local/bin/authz"]

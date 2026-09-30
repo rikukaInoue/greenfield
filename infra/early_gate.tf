@@ -70,6 +70,19 @@ data "archive_file" "gate_hook" {
     filename = "index.py"
     content  = <<-PY
       import json, os, urllib.request, urllib.error
+      import boto3
+
+      _ssm = boto3.client("ssm")
+      _token = None
+
+      def token():
+          # devtoken は Lambda の環境変数に平文で置かず、実行時に SSM から解決する(#210)
+          global _token
+          if _token is None:
+              _token = _ssm.get_parameter(
+                  Name=os.environ["DEVTOKEN_PARAM"], WithDecryption=True
+              )["Parameter"]["Value"]
+          return _token
 
       def check():
           base = os.environ["TEST_URL"]
@@ -84,7 +97,7 @@ data "archive_file" "gate_hook" {
               data=json.dumps({"caption": "gate-hook", "content_type": "image/png"}).encode(),
               headers={
                   "Content-Type": "application/json",
-                  "Authorization": "Bearer " + os.environ["DEVTOKEN"],
+                  "Authorization": "Bearer " + token(),
               },
               method="POST",
           )
@@ -123,6 +136,25 @@ resource "aws_iam_role_policy_attachment" "gate_hook_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_ssm_parameter" "hook_devtoken" {
+  name  = "/greenfield/71/hook-devtoken"
+  type  = "SecureString"
+  # SSM は空値を拒否する。フック未使用の apply でも通るよう番人値を置く
+  value = var.hook_devtoken != "" ? var.hook_devtoken : "unset"
+}
+
+resource "aws_iam_role_policy" "gate_hook_ssm" {
+  name = "devtoken"
+  role = aws_iam_role.gate_hook_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      { Effect = "Allow", Action = ["ssm:GetParameter"], Resource = [aws_ssm_parameter.hook_devtoken.arn] },
+      { Effect = "Allow", Action = ["kms:Decrypt"], Resource = [data.aws_kms_alias.ssm.target_key_arn] }
+    ]
+  })
+}
+
 resource "aws_lambda_function" "gate_hook" {
   function_name    = "greenfield-71-gate-hook"
   role             = aws_iam_role.gate_hook_lambda.arn
@@ -133,8 +165,8 @@ resource "aws_lambda_function" "gate_hook" {
   timeout          = 30
   environment {
     variables = {
-      TEST_URL = "http://${aws_lb.main.dns_name}:8081"
-      DEVTOKEN = var.hook_devtoken
+      TEST_URL       = "http://${aws_lb.main.dns_name}:8081"
+      DEVTOKEN_PARAM = aws_ssm_parameter.hook_devtoken.name
     }
   }
 }

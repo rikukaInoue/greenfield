@@ -73,7 +73,7 @@ run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exi
 
 [tasks.check]
 description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check + client:check（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "lint:drift", "sqlc:check", "api:check", "client:check", "api:breaking:test", "baseline:test"]
+depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "lint:secure-defaults", "lint:drift", "sqlc:check", "api:check", "client:check", "api:breaking:test", "baseline:test"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -159,6 +159,10 @@ run = 'for s in $(mise run services); do echo "== $s"; (cd $s && GOWORK=off gola
 [tasks."lint:drift"]
 description = "共有依存のバージョン乖離を観測する(#205)。警告のみ(exit 0)——fail にすると依存更新 PR が片側から通せない。締めるなら -strict"
 run = "go run ./dev/driftcheck"
+
+[tasks."lint:secure-defaults"]
+description = "守りの既定値の検査: 非root/保存時暗号化/平文秘密なし(#210 #212 #213)"
+run = "dev/scripts/secure-defaults-check.sh"
 
 [tasks."lint:replaces"]
 description = "モジュール間 require の replace 漏れと、Dockerfile の COPY 漏れを検査(#163)"

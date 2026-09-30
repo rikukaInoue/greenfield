@@ -22,6 +22,9 @@ RUN cd services/gear && GOWORK=off CGO_ENABLED=0 go build -trimpath -o /out/gear
 FROM alpine:3.22
 # healthcheck が curl を使う（compose の healthcheck からも同じものを呼ぶ）
 RUN apk add --no-cache curl ca-certificates
+# root で動かす理由がない(#213)。専用の非特権ユーザーで実行する
+RUN adduser -D -H -u 65532 app
+USER app
 COPY --from=build /out/gear /usr/local/bin/gear
 # 引数なしで3リスナーを起動する。migrate は同じイメージに引数を渡して別ジョブが実行する
 ENTRYPOINT ["/usr/local/bin/gear"]
