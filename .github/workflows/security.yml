@@ -36,3 +36,24 @@ jobs:
       # その場合は依存ではなく mise.toml の go を上げることになる
       - name: 依存と toolchain の CVE
         run: mise run vuln
+
+  frontend-deps:
+    name: frontend 依存 + Node ランタイム
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/prepare
+        with:
+          cache-key: vuln-frontend
+          mysql: "false"
+
+      # PR ゲート（ci.yml の frontend ジョブ）と同じ検査。日次でも回すのは
+      # 脆弱性 DB が毎日増えるから——依存が1バイトも変わらなくても明日は affected になる
+      - name: 依存の既知脆弱性（osv-scanner + pnpm audit --prod）
+        run: mise run --quiet web:vuln
+
+      # Node ランタイム自体の CVE は依存を上げても消えない（Go の toolchain と同じ問題）。
+      # 外部 API（endoflife.date）に依存するので PR ゲートには入れず日次だけ
+      - name: Node ランタイムのパッチ遅れ
+        run: dev/scripts/node-version-check.sh

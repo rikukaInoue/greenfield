@@ -1,0 +1,3 @@
+# pnpm audit --prod の既知検出（#183 / ADR 0021）。本番に載る依存だけがゲート対象。
+# 書式: <GHSA/CVE> <モジュール名>  # 理由 exp:YYYY-MM-DD #issue
+# 理由・期限の無い行は baseline-diff.sh が受理しない。2026-09-30 時点で検出0件。

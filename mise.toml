@@ -5,6 +5,7 @@ sqlc = "1.31.1"
 "golangci-lint" = "2.14.0"
 "ubi:oasdiff/oasdiff" = "1.32.1"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.8.0"
+"osv-scanner" = "2.6.0"
 node = "24.21.0"
 pnpm = "12.6.0"
 
@@ -143,6 +144,10 @@ run = "dev/scripts/client-gen.sh --check"
 [tasks."api:breaking:test"]
 description = "API のバージョニング規則（api:breaking）が違反を正しく落とすか検査する"
 run = "dev/scripts/api-breaking.test.sh"
+
+[tasks."web:vuln"]
+description = "frontend 依存の既知脆弱性（#183）。osv-scanner + pnpm audit --prod を差分運用（ADR 0021）で"
+run = "dev/scripts/frontend-deps-check.sh"
 
 [tasks."baseline:test"]
 description = "差分運用の共通機構（baseline-diff.sh、ADR 0021）が破るべき形を正しく落とすか検査する"

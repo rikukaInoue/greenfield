@@ -477,6 +477,11 @@ jobs:
       - name: 生成型の一致 / typecheck / build
         run: mise run --quiet web:check
 
+      # 依存の既知脆弱性（#183）。npm には govulncheck 相当の到達性解析が無いので
+      # 件数が出る前提で差分運用（ADR 0021）に乗せる。日次の再検査は security.yml
+      - name: 依存の既知脆弱性（osv-scanner + pnpm audit --prod）
+        run: mise run --quiet web:vuln
+
       - name: Playwright のブラウザを用意する
         working-directory: frontend/apps/web
         run: pnpm exec playwright install --with-deps chromium
