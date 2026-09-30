@@ -88,3 +88,4 @@
 - [npm サプライチェーン: ビルドスクリプトの許可リスト化（#184）](2026-09-30-npm-supply-chain.md)
 - [Trivy: 設定・シークレット・イメージの検査（#187）](2026-09-30-trivy.md)
 - [gosec を段階導入する（#188）](2026-09-30-gosec.md)
+- [ZAP baseline（passive）を夜間に回す（#189）](2026-09-30-zap-baseline.md)

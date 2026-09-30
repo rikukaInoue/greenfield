@@ -29,6 +29,8 @@ export const securityHeaders: Record<string, string> = {
   "Content-Security-Policy": csp,
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "same-origin",
+  // 使っていない強力な API を明示的に閉じる（ZAP 10063。#189 の実測で追加）
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
   // frame-ancestors と重複するが、CSP を解さない古い経路への保険として残す
   "X-Frame-Options": "DENY",
 };

@@ -33,6 +33,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ランナー既定の Go は go.work の要求(>=1.26)より古く autobuild が落ちる（初回実行で実測）
+      - uses: actions/setup-go@v6
+        if: matrix.language == 'go'
+        with:
+          go-version: "1.26.6"
+          cache: false
+
       - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
