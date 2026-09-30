@@ -31,6 +31,9 @@ variable "deploy_marker" { default = "v1" } # taskdef の改版トリガー(B/G 
 # BLUE_GREEN に canaryConfiguration を付けると InvalidParameterException。
 # なお terraform provider はこの無効な組を黙って受理して canary を落とす)
 variable "deploy_strategy" { default = "BLUE_GREEN" }
+# 8.4(#219/#225)の実測用。Multi-AZ とバックアップは検証時だけ有効にする
+variable "multi_az" { default = false }
+variable "backup_retention_days" { default = 0 }
 
 data "aws_availability_zones" "azs" { state = "available" }
 
@@ -140,6 +143,9 @@ resource "aws_db_instance" "mysql" {
   # 公開しない。ブートストラップ(init SQL)も migrate も VPC 内の one-off ECS タスクで
   # 実行する(migrate は本番も ECS タスクで流す形なので、その形の予行にもなる)
   publicly_accessible = false
+  # 8.4: フェイルオーバー(#219)と PITR/リストア(#225)の実測用
+  multi_az                = var.multi_az
+  backup_retention_period = var.backup_retention_days
   # 保存時暗号化は既定(#212)。今どき無効にする理由がない
   storage_encrypted = true
 }

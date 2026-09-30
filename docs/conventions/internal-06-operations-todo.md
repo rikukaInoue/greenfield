@@ -152,6 +152,8 @@ OTel SDK は `telemetry` に置き、**core には入れない**（`core/middlew
 
 **Dependabot alerts と govulncheck の判定が食い違ったら govulncheck を採る。** alerts は依存グラフだけを見て到達性を見ないため、呼ばれないコードパスの CVE も鳴らす。その alert は「govulncheck で到達不能」と理由を書いて Dismiss する（黙って消さない——理由の無い Dismiss は次に見た人が再調査する）。逆に govulncheck だけが鳴るケース（Go toolchain 自体の CVE）は依存でなく mise.toml の go を上げる。
 
+**配る側の証明（#218）**: image-release ワークフローが ghcr へ push するイメージには cosign keyless 署名・SPDX SBOM の attestation・GitHub provenance が付く。デプロイ側は `dev/scripts/image-verify.sh` で3点を fail closed に検証してから使う（同一性は workflow ref で縛る。偽 identity の拒否まで実測済み）。検出系（本節の5層）が「入っているものに穴が無いか」を見るのに対し、こちらは「入っているものが本当にうちのビルドか」を見る——独立した軸。
+
 Dependabot PR の自動マージは**まだ有効にしない**。自動マージの前提は「壊れた更新でテストが本当に落ちること」で、認可の総当たりテスト（#182）が入るまでは、検査ではなく自動デプロイの穴になる。有効化するとしても patch のみ・minor 以上は人間が読む。
 
 

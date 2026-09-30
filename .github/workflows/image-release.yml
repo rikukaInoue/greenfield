@@ -1,0 +1,72 @@
+# 配る側のサプライチェーン(#218)。検出系(sec レーン)と対になる「証明の付与」:
+#   1. イメージを ghcr へ push
+#   2. cosign keyless 署名(GH OIDC。鍵を持たない=漏れる鍵が無い)
+#   3. SBOM(syft, SPDX)を attestation としてイメージに紐付け
+#   4. ビルド provenance(GitHub attestation。どの workflow がどの commit から作ったか)
+# デプロイ側は dev/scripts/image-verify.sh で3点を fail closed に検証する。
+name: image-release
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "対象サービス(all | photo | gear | authz)"
+        default: "all"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write # cosign keyless(Fulcio)と provenance に必須
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [photo, gear, authz]
+    steps:
+      - name: 対象の絞り込み
+        if: ${{ inputs.service != 'all' && inputs.service != matrix.service }}
+        run: echo "skip=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.skip != '1'
+      - uses: sigstore/cosign-installer@v3
+        if: env.skip != '1'
+      - uses: anchore/sbom-action/download-syft@v0
+        if: env.skip != '1'
+      - name: ghcr へログイン
+        if: env.skip != '1'
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: build & push
+        if: env.skip != '1'
+        id: build
+        run: |
+          dir=services/${{ matrix.service }}
+          [ -d "$dir" ] || dir=platform/${{ matrix.service }}
+          # ghcr のリポジトリ名は小文字必須(github.repository は大文字を含みうる)
+          IMAGE=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')/${{ matrix.service }}
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          docker build -f "$dir/Dockerfile" -t "$IMAGE:${{ github.sha }}" .
+          docker push "$IMAGE:${{ github.sha }}"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "digest_sha=${DIGEST#*@}" >> "$GITHUB_OUTPUT"
+      - name: cosign keyless 署名
+        if: env.skip != '1'
+        run: cosign sign --yes "${{ steps.build.outputs.digest }}"
+      - name: SBOM を生成して attest
+        if: env.skip != '1'
+        run: |
+          syft "${{ steps.build.outputs.digest }}" -o spdx-json > sbom.spdx.json
+          test -s sbom.spdx.json # 空の SBOM を成果物にしない(fail closed)
+          # 旧来の .att タグでなく OCI referrers(bundle)で付ける: cosign v3 の verify-attestation は
+          # referrers 側しか読まず、.att だけだと「SBOM が無い」ように見える(実測)
+          cosign attest --yes --new-bundle-format=true --type spdxjson --predicate sbom.spdx.json "${{ steps.build.outputs.digest }}"
+      - name: ビルド provenance(GitHub attestation)
+        if: env.skip != '1'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ steps.build.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest_sha }}
+          push-to-registry: true
