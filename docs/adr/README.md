@@ -41,3 +41,4 @@
 | [0018](0018-keep-localstack-for-sns-sqs.md) | イベント基盤のローカルは LocalStack を使い続ける | 要 |
 | [0019](0019-httpapi-in-core.md) | huma + chi は `core/httpapi` に閉じて core に置く | 要 |
 | [0020](0020-migration-tool-comparison.md) | マイグレーションツール比較: golang-migrate と goose（草案） | 要 |
+| [0021](0021-diff-driven-scanning.md) | 継続的検査は差分運用にする（baseline 固定・理由と期限必須・fail-open にしない） | 要 |
