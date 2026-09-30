@@ -4,6 +4,7 @@ go = "1.26.6"
 sqlc = "1.31.1"
 "golangci-lint" = "2.14.0"
 "ubi:oasdiff/oasdiff" = "1.32.1"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.8.0"
 node = "24.21.0"
 pnpm = "12.6.0"
 
@@ -34,6 +35,25 @@ run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go bu
 [tasks.vet]
 description = "各モジュールを GOWORK=off で go vet"
 run = 'for m in $(mise run modules); do echo "== $m"; (cd $m && GOWORK=off go vet ./...) || exit 1; done'
+
+[tasks.vuln]
+description = "各モジュールを GOWORK=off で govulncheck（依存 CVE を到達性つきで検査）"
+# ワークスペースモードでは解析が use の全モジュールに広がり、どのモジュールの依存として
+# 到達しているのかが分からなくなる。build / vet / test と同じくモジュール単位で回す。
+# 対象0件は「検査が空振りしている」状態なので落とす。
+run = """
+n=0
+for m in $(mise run modules); do
+  echo "== $m"
+  (cd $m && GOWORK=off govulncheck ./...) || exit 1
+  n=$((n + 1))
+done
+echo "検査したモジュール: $n"
+if [ "$n" -eq 0 ]; then
+  echo "govulncheck: 対象が0件。検査が空振りしている" >&2
+  exit 1
+fi
+"""
 
 [tasks.test]
 description = "各モジュールを GOWORK=off で go test（DB系のテストは mysql 到達時のみ走る）"

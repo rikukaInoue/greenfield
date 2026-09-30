@@ -57,3 +57,4 @@
 | 2026-09-30 | [ステージ 5.2 SSR 後半: confidential client（#56） / チェック #17](verification-log/2026-09-30-stage-52-oidc.md) |
 | 2026-09-30 | [トラフィック分割のローカル予行（#172）](verification-log/2026-09-30-traffic-split-drill.md) |
 | 2026-09-30 | [7.2b 早期判定の再演: 昇格ゲート・アラーム自動ロールバック・stopDeployment（#175）](verification-log/2026-09-30-stage-72b.md) |
+| 2026-09-30 | [依存 CVE の検査を到達性つきで入れる（#180 / #194）](verification-log/2026-09-30-govulncheck.md) |
