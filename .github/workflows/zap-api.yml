@@ -1,0 +1,100 @@
+# ZAP API scan（active。実際に攻撃を撃つ。#190）。時間がかかるので週次。
+#
+# スパイダーは使わない——リンクを辿る探索器は REST API をほぼ発見できない。
+# 生成済みの OpenAPI（api/photo/external.v2.openapi.json）を食わせ、
+# 全エンドポイント・全パラメータを知った状態から始める。
+#
+# ## この検査が保証するもの／しないもの（誤読防止。#190）
+# 認証は dev/devtoken の擬似トークンを replacer で差し込む。つまりここで検査している
+# 認証実装は **staticauthn であって本番の oidcauthn ではない**——「ZAP が通ったから
+# 本番の認証は安全」とは読めない（oidcauthn の一気通貫は authn:check の担当）。
+# 一方 **認可・入力検証・エラーハンドリングの検査としては有効**（handler/usecase は
+# 認証アダプタの内側で共通）。
+#
+# active は POST を実際に撃つのでデータは壊れる前提。このジョブの環境は service
+# コンテナ（毎回まっさら）なので、reclaim も db:reset も要らない。
+# 既知の検出は #189 と同じ .zap/rules.tsv。-I を付けないので新規 alert だけが落とす。
+name: ZAP API
+
+on:
+  schedule:
+    # 日曜 04:47 JST
+    - cron: "47 19 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ENV: ci
+  MYSQL_CONTAINER: ""
+  FLAGS_SOURCE: file
+  FLAGS_FILE: deploy/compose/flagd/flags.json
+
+jobs:
+  api-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 13306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      rustfs:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: test
+          RUSTFS_SECRET_KEY: testtest
+          RUSTFS_CONSOLE_ENABLE: "false"
+        ports:
+          - 9000:9000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/prepare
+        with:
+          cache-key: zap-api
+
+      - name: バケットとマイグレーション
+        run: |
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:9000/ && break; sleep 2; done
+          mise run --quiet s3:up
+          mise run --quiet migrate
+
+      - name: allinone を起動する
+        run: |
+          go build -o "$RUNNER_TEMP/allinone" ./dev/allinone
+          nohup "$RUNNER_TEMP/allinone" > "$RUNNER_TEMP/allinone.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:8080/healthz && exit 0; sleep 1; done
+          echo "photo が起動しない" >&2; exit 1
+
+      - name: OpenAPI を食わせて active scan（photo external v2）
+        run: |
+          TOKEN=$(go run ./dev/devtoken --user alice)
+          docker run --rm --network host \
+            -v "$PWD/api:/zap/wrk/api:ro" -v "$PWD/.zap:/zap/wrk/.zap:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
+            -t /zap/wrk/api/photo/external.v2.openapi.json -f openapi \
+            -T 45 \
+            -O http://localhost:8080 \
+            -c .zap/rules.tsv -r .zap/zap-api-photo.html \
+            -z "-config replacer.full_list(0).description=auth -config replacer.full_list(0).enabled=true -config replacer.full_list(0).matchtype=REQ_HEADER -config replacer.full_list(0).matchstr=Authorization -config replacer.full_list(0).replacement='Bearer $TOKEN'"
+
+      - name: レポートを保存する
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-api-reports
+          path: .zap/*.html
+          retention-days: 14
+
+      - name: サーバーログ
+        if: failure()
+        run: tail -n 100 "$RUNNER_TEMP/allinone.log" 2>/dev/null || true
