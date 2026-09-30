@@ -57,3 +57,20 @@ jobs:
       # 外部 API（endoflife.date）に依存するので PR ゲートには入れず日次だけ
       - name: Node ランタイムのパッチ遅れ
         run: dev/scripts/node-version-check.sh
+
+  trivy:
+    name: Trivy（設定・シークレット・イメージ）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      # PR ゲート（ci.yml の trivy ジョブ）は設定とシークレットだけ。日次はイメージも
+      # 3本ビルドして検査する——ビルド時にクリーンだったイメージは翌日公表の CVE で
+      # 脆弱になる（1バイトも変わっていないのに状態が変わる）
+      - name: 設定・シークレット・イメージ（3本ビルド、ignore-unfixed）
+        run: mise run --quiet trivy:image
