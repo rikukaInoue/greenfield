@@ -56,6 +56,7 @@ func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
 	if err != nil {
 		return fmt.Errorf("gear db: %w", err)
 	}
+	db = configureDB(db)
 	defer db.Close()
 	events := usecase.NewPhotoEvents(consistency.NewAtomic(db), inboxAdapter{}, replicaview.NewPhotoReplica(db))
 
@@ -89,6 +90,7 @@ func RebuildReplica(ctx context.Context, cfg ConsumeConfig) error {
 	if err != nil {
 		return fmt.Errorf("gear db: %w", err)
 	}
+	db = configureDB(db)
 	defer db.Close()
 	r := replicaview.NewPhotoReplica(db)
 	if err := r.Rebuild(ctx, []string{"photo.published", "photo.deleted"}); err != nil {
@@ -108,6 +110,7 @@ func ReplicaStatus(ctx context.Context, cfg ConsumeConfig) error {
 	if err != nil {
 		return fmt.Errorf("gear db: %w", err)
 	}
+	db = configureDB(db)
 	defer db.Close()
 	fp, n, err := replicaview.NewPhotoReplica(db).Fingerprint(ctx)
 	if err != nil {
