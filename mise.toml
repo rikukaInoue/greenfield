@@ -88,6 +88,11 @@ depends = ["db:up"]
 # サービス名を引数で渡し、その database が実際に在ることをスクリプト側で確かめる
 run = 'dev/scripts/no-cross-db-fk.sh $(MODULES= dev/scripts/modules.sh --services | xargs -n1 basename)'
 
+[tasks."fk:report"]
+description = "跨ぐ外部キーの棚卸し(警告モード)。移行途中の「あと何が切れれば独立か」を出す(#197)"
+depends = ["db:up"]
+run = 'FK_CHECK_MODE=warn dev/scripts/no-cross-db-fk.sh $(MODULES= dev/scripts/modules.sh --services | xargs -n1 basename)'
+
 [tasks."schema:check-live"]
 description = "実行時の DB が db/schema.sql と一致しているか検証（生成と実行の乖離を検出する）"
 depends = ["db:up"]
