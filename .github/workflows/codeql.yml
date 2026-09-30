@@ -1,0 +1,43 @@
+# データフロー検査（#192）。gosec(#188) がパターン検査、CodeQL がデータフロー検査という住み分け。
+# 深いぶん遅いので PR ごとではなく main への push と週次。結果は Security タブ（Code scanning）。
+#
+# クエリは既定セットから始める。security-extended への格上げは初回の件数を見て決める
+# （ADR 0021: ノイズのある検査は件数を見てから飼い方を決める）。
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 月曜 06:17 JST。分をずらすのは毎時0分の混雑回避（security.yml と同じ流儀）
+    - cron: "17 21 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # go.work のマルチモジュールは autobuild が迷うので build-mode: none（解析だけ）
+          - language: go
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
