@@ -47,6 +47,12 @@ for mod in $gomods; do
     checked_requires=$((checked_requires + 1))
     if ! echo "$replaces" | grep -qx "$req"; then
       ng "$mod: $req の replace が無い(公開版を黙って拾う)"
+      # flaky 調査(#204系: replace が実在するのに稀に見落とす報告が2件)。
+      # 再現時に「その瞬間の grep が何を見たか」を残す
+      echo "  -- debug: $mod の replace 行 --" >&2
+      grep -n "^replace" "$mod" >&2 || echo "  (grep が replace 行を0件返した)" >&2
+      echo "  -- debug: 抽出済み replaces --" >&2
+      echo "$replaces" >&2
     fi
   done
   # replace の指す先が実在するか
