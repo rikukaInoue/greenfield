@@ -49,6 +49,7 @@ jobs:
           docker push "$IMAGE:${{ github.sha }}"
           DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "digest_sha=${DIGEST#*@}" >> "$GITHUB_OUTPUT"
       - name: cosign keyless 署名
         if: env.skip != '1'
         run: cosign sign --yes "${{ steps.build.outputs.digest }}"
@@ -63,5 +64,5 @@ jobs:
         uses: actions/attest-build-provenance@v3
         with:
           subject-name: ghcr.io/${{ github.repository }}/${{ matrix.service }}
-          subject-digest: ${{ steps.build.outputs.digest && format('sha256:{0}', split(steps.build.outputs.digest, 'sha256:')[1]) }}
+          subject-digest: ${{ steps.build.outputs.digest_sha }}
           push-to-registry: true
