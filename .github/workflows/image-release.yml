@@ -44,7 +44,9 @@ jobs:
         run: |
           dir=services/${{ matrix.service }}
           [ -d "$dir" ] || dir=platform/${{ matrix.service }}
-          IMAGE=ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          # ghcr のリポジトリ名は小文字必須(github.repository は大文字を含みうる)
+          IMAGE=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')/${{ matrix.service }}
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           docker build -f "$dir/Dockerfile" -t "$IMAGE:${{ github.sha }}" .
           docker push "$IMAGE:${{ github.sha }}"
           DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
@@ -63,6 +65,6 @@ jobs:
         if: env.skip != '1'
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          subject-name: ${{ steps.build.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest_sha }}
           push-to-registry: true
