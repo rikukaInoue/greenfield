@@ -60,7 +60,9 @@ jobs:
         run: |
           syft "${{ steps.build.outputs.digest }}" -o spdx-json > sbom.spdx.json
           test -s sbom.spdx.json # 空の SBOM を成果物にしない(fail closed)
-          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "${{ steps.build.outputs.digest }}"
+          # 旧来の .att タグでなく OCI referrers(bundle)で付ける: cosign v3 の verify-attestation は
+          # referrers 側しか読まず、.att だけだと「SBOM が無い」ように見える(実測)
+          cosign attest --yes --new-bundle-format=true --type spdxjson --predicate sbom.spdx.json "${{ steps.build.outputs.digest }}"
       - name: ビルド provenance(GitHub attestation)
         if: env.skip != '1'
         uses: actions/attest-build-provenance@v3
