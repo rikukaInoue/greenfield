@@ -32,6 +32,7 @@ import (
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	externalv2 "github.com/rikukaInoue/greenfield/services/photo/handler/external/v2"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
+	"github.com/rikukaInoue/greenfield/services/photo/migrations"
 	"github.com/rikukaInoue/greenfield/services/photo/readmodel"
 	"github.com/rikukaInoue/greenfield/services/photo/repository"
 	"github.com/rikukaInoue/greenfield/services/photo/usecase"
@@ -318,6 +319,16 @@ func Run(ctx context.Context, cfg Config) error {
 				return 0
 			}
 			return age.Float64
+		})
+		// contract キューの滞留(#200)。「フラグ100% → 旧経路削除 → contract」の
+		// 最後の一歩は人間の起動待ちで、忘れても他のどこにも出ない。0 が定常、
+		// 0 より大きい状態が続いたら消化忘れ(min_over_time で警報にする)。読めないときは -1
+		reg.ObserveGauge("contract_pending", "未適用の contract マイグレーション数", func(ctx context.Context) float64 {
+			n, err := migrations.PendingCount(ctx, deps.DB, migrations.Contract)
+			if err != nil {
+				return -1
+			}
+			return float64(n)
 		})
 		reg.Serve(ctx, cfg.MetricsAddr)
 	}

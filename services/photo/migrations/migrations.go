@@ -31,6 +31,9 @@ const (
 	Contract Series = "contract" // 削除・変更系。キュー消化として明示実行
 )
 
+// historyTablePrefix は golang-migrate の履歴テーブル名の接頭辞(系統ごとに分ける)。
+const historyTablePrefix = "photo_migrations_"
+
 const (
 	// lockWaitTimeout はロック待ちの上限（秒）。後続クエリが詰まる前に適用側が退く。
 	lockWaitTimeout = 5
@@ -115,7 +118,7 @@ func open(dsn string, s Series) (*migrate.Migrate, source.Driver, func(), error)
 	}
 	driver, err := migratemysql.WithInstance(db, &migratemysql.Config{
 		DatabaseName:    cfg.DBName,
-		MigrationsTable: "photo_migrations_" + string(s),
+		MigrationsTable: historyTablePrefix + string(s),
 	})
 	if err != nil {
 		db.Close()
@@ -195,4 +198,77 @@ func isLockTimeout(err error) bool {
 		}
 	}
 	return false
+}
+
+// PendingCount は系統 s の未適用マイグレーション数を返す(#200)。
+// contract は「フラグ100%到達 → 旧経路削除 → 実行」のキュー消化なので、
+// 忘れると滞留したまま誰も気づかない。常時メトリクスにするための読み取り専用ヘルパ。
+// 履歴テーブルが無い(=一度も適用していない)は「全件未適用」として数える。
+func PendingCount(ctx context.Context, db *sql.DB, s Series) (int, error) {
+	versions, err := embeddedVersions(s)
+	if err != nil {
+		return 0, err
+	}
+	applied, err := appliedVersion(ctx, db, s)
+	if err != nil {
+		return 0, err
+	}
+	return pendingCount(versions, applied), nil
+}
+
+func pendingCount(versions []uint64, applied uint64) int {
+	n := 0
+	for _, v := range versions {
+		if v > applied {
+			n++
+		}
+	}
+	return n
+}
+
+// embeddedVersions は埋め込みファイル名(NNNNNN_name.up.sql)からバージョン一覧を読む。
+func embeddedVersions(s Series) ([]uint64, error) {
+	entries, err := fs.ReadDir(files, string(s))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil // 系統にファイルが1つもない(gear の contract 等)
+		}
+		return nil, err
+	}
+	var out []uint64
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		i := strings.IndexByte(name, '_')
+		if i <= 0 {
+			return nil, fmt.Errorf("migrations: バージョンが読めないファイル名: %s", name)
+		}
+		var v uint64
+		if _, err := fmt.Sscanf(name[:i], "%d", &v); err != nil {
+			return nil, fmt.Errorf("migrations: バージョンが読めないファイル名: %s", name)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// appliedVersion は履歴テーブルの適用済みバージョンを読む。テーブルが無ければ 0。
+// dirty(直前の失敗)は Up が解消するのでここでは区別しない。
+func appliedVersion(ctx context.Context, db *sql.DB, s Series) (uint64, error) {
+	var v uint64
+	err := db.QueryRowContext(ctx,
+		"SELECT version FROM "+historyTablePrefix+string(s)+" LIMIT 1").Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	var me *mysql.MySQLError
+	if errors.As(err, &me) && me.Number == 1146 { // テーブルが無い = 未適用
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return v, nil
 }

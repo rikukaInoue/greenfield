@@ -30,6 +30,7 @@ import (
 	"github.com/rikukaInoue/greenfield/services/gear/handler/admin"
 	"github.com/rikukaInoue/greenfield/services/gear/handler/external"
 	"github.com/rikukaInoue/greenfield/services/gear/handler/internalapi"
+	"github.com/rikukaInoue/greenfield/services/gear/migrations"
 	"github.com/rikukaInoue/greenfield/services/gear/photocatalog"
 	"github.com/rikukaInoue/greenfield/services/gear/readmodel"
 	"github.com/rikukaInoue/greenfield/services/gear/repository"
@@ -266,6 +267,14 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.MetricsAddr != "" && deps.DB != nil {
 		reg := telemetry.New("gear")
 		reg.ObservePool("gear", deps.DB)
+		// contract キューの滞留(#200)。photo 側と同じ規約(0=滞留なし、-1=観測不能)
+		reg.ObserveGauge("contract_pending", "未適用の contract マイグレーション数", func(ctx context.Context) float64 {
+			n, err := migrations.PendingCount(ctx, deps.DB, migrations.Contract)
+			if err != nil {
+				return -1
+			}
+			return float64(n)
+		})
 		reg.Serve(ctx, cfg.MetricsAddr)
 	}
 	return RunWith(ctx, cfg, deps)
