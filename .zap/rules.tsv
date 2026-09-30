@@ -1,0 +1,23 @@
+# ZAP baseline の既知検出（#189 / ADR 0021 の差分運用）。
+# ここに IGNORE した rule 以外が出ると WARN-NEW となり、-I を付けていないのでジョブが落ちる
+# ＝新規だけが赤くなる。書式: <rule-id><TAB><IGNORE|WARN|FAIL><TAB>(メモ)
+# ZAP に期限の機構は無いので、コメントで exp: を書き、期限が来たら見直す。
+#
+# 10021/10038: 静的アセット(/assets/*)と robots.txt 404 は react-router-serve の
+#   静的配信層で、route middleware(セキュリティヘッダ)を通らない。HTML 側のヘッダ実在は
+#   #186 の e2e が固定済みで、ZAP のこのルールの担当分は静的配信層だけ。恒久対応は
+#   プロキシ/CDN 層でのヘッダ付与(#211 の TLS 終端と同じ層)。exp:2026-12-31 #189
+10021	IGNORE	(静的アセットのみ。HTML は #186 e2e が担保)
+10038	IGNORE	(robots.txt 404 のみ。HTML は #186 e2e が担保)
+10063	IGNORE	(静的アセットと404のみ。HTML には付与済みで security.test.ts が担保)
+# 10049: 認証つき SSR 応答が「キャッシュ不能」なのはむしろ意図(セッションの越境防止)。exp:2027-03-31
+10049	IGNORE	(認証つき SSR は no-store が正しい側)
+# 10055: script-src 'unsafe-inline' は React Router ハイドレーションのための既知の妥協
+#   (#186 の security.test.ts に明記)。nonce 化で外した日にこの行も消す。exp:2026-12-31
+10055	IGNORE	(既知の妥協。#186 参照)
+# 10202: CSRF はトークンでなく sameSite=Lax + 「状態を変える GET なし」(#186-4 の e2e で固定)
+#   で守る設計。exp:2027-03-31
+10202	IGNORE	(Lax + POST-only action の設計。#186)
+# 90004: COEP は cross-origin isolation 用。画像を別 origin(ストレージ)から読む設計と
+#   衝突するため、必要になったら CORP と併せて設計する。exp:2027-03-31
+90004	IGNORE	(画像の別 origin 配信と衝突。要るときに CORP と併設計)

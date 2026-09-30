@@ -1,0 +1,100 @@
+# ZAP baseline（passive のみ。#189）。攻撃は撃たず、通過したレスポンスだけを見る。
+# 主対象は API ではなく frontend——SSR が返す HTML はブラウザが実行するので、
+# CSP やヘッダが実際に意味を持つのはこちら側（#186 と対応）。
+#
+# 差分運用（ADR 0021）: 既知の検出は .zap/rules.tsv に理由つきで IGNORE してあり、
+# -I を付けずに回すので**新規の alert だけ**がジョブを落とす。
+#
+# スコープ: baseline の spider は対象ホスト:ポートに閉じるので、署名付き URL が指す
+# ストレージ（:9000）へ攻撃が飛ぶことはない。当てるのは external(:8080) と SSR(:3000) だけ。
+# 内部(:8081)/admin(:8082) は当てない——到達不能はネットワーク層の性質で ZAP の仕事ではなく、
+# ルート表の分離は TestListenersDoNotShareRoutes が担保している。
+name: ZAP
+
+on:
+  schedule:
+    # 毎日 03:47 JST
+    - cron: "47 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ENV: ci
+  MYSQL_CONTAINER: ""
+  FLAGS_SOURCE: file
+  FLAGS_FILE: deploy/compose/flagd/flags.json
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 13306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      rustfs:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: test
+          RUSTFS_SECRET_KEY: testtest
+          RUSTFS_CONSOLE_ENABLE: "false"
+        ports:
+          - 9000:9000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/prepare
+        with:
+          cache-key: zap
+
+      - name: バケットとマイグレーション
+        run: |
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:9000/ && break; sleep 2; done
+          mise run --quiet s3:up
+          mise run --quiet migrate
+
+      - name: frontend をビルドする
+        run: mise run --quiet web:check
+
+      - name: allinone と SSR を起動する
+        run: |
+          go build -o "$RUNNER_TEMP/allinone" ./dev/allinone
+          nohup "$RUNNER_TEMP/allinone" > "$RUNNER_TEMP/allinone.log" 2>&1 &
+          (cd frontend/apps/web && PORT=3000 nohup pnpm start > "$RUNNER_TEMP/web.log" 2>&1 &)
+          for url in http://localhost:8080/healthz http://localhost:3000/login; do
+            for i in $(seq 1 60); do curl -sf -o /dev/null "$url" && continue 2; sleep 1; done
+            echo "$url が起動しない" >&2; exit 1
+          done
+
+      - name: ZAP baseline（SSR。新規 alert だけが落とす）
+        run: |
+          docker run --rm --network host -v "$PWD/.zap:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:3000 -c rules.tsv -r zap-web.html
+
+      - name: ZAP baseline（photo external）
+        run: |
+          docker run --rm --network host -v "$PWD/.zap:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8080 -c rules.tsv -r zap-photo.html
+
+      - name: レポートを保存する
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: .zap/*.html
+          retention-days: 14
+
+      - name: サーバーログ
+        if: failure()
+        run: tail -n 100 "$RUNNER_TEMP/allinone.log" "$RUNNER_TEMP/web.log" 2>/dev/null || true

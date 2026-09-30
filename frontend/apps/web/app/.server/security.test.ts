@@ -32,6 +32,7 @@ test("CSP 以外の防御ヘッダ", () => {
   assert.equal(securityHeaders["X-Content-Type-Options"], "nosniff");
   assert.equal(securityHeaders["Referrer-Policy"], "same-origin");
   assert.equal(securityHeaders["X-Frame-Options"], "DENY");
+  assert.ok(securityHeaders["Permissions-Policy"].includes("camera=()"));
 });
 
 // script-src の 'unsafe-inline' は React Router のハイドレーションのための既知の妥協。
