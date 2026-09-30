@@ -89,6 +89,11 @@ type Options struct {
 	// Middlewares は認証の後に適用する。
 	Middlewares []func(http.Handler) http.Handler
 
+	// Tracing は基盤スタック(相関ID/アクセスログ/復帰)の**直後・認証より前**に適用する
+	// 観測用ミドルウェア(サーバ span 等)。認証で落ちる 401 にも span を張るための位置。
+	// core は OTel を知らない——合成ルートが telemetry の実装を注入する(#214)。
+	Tracing func(http.Handler) http.Handler
+
 	// Revision はこの**デプロイ**の識別子（例: ECS タスク定義リビジョン、イメージタグ）。
 	// 全応答に X-Service-Revision として載せる。カナリア・B/G で「どちらの版が
 	// 応答したか」を外から観測できないと、重み・切替・ロールバックの検証が成立しない
@@ -130,6 +135,9 @@ func New(l Listener, o Options) API {
 	// 基盤スタックは認証より外。順序の理由は baseMiddlewares と middleware.Base を参照。
 	for _, m := range baseMiddlewares() {
 		r.Use(m)
+	}
+	if o.Tracing != nil {
+		r.Use(o.Tracing)
 	}
 	if o.Authenticator != nil {
 		r.Use(o.Authenticator.Middleware())

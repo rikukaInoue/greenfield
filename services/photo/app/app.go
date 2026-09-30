@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
 
+	"github.com/XSAM/otelsql"
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/authz/authzhttp"
 	"github.com/rikukaInoue/greenfield/core/authz/devtoken"
@@ -37,6 +38,9 @@ import (
 	"github.com/rikukaInoue/greenfield/services/photo/readmodel"
 	"github.com/rikukaInoue/greenfield/services/photo/repository"
 	"github.com/rikukaInoue/greenfield/services/photo/usecase"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/rikukaInoue/greenfield/telemetry"
 )
 
@@ -135,6 +139,9 @@ type Deps struct {
 	// usecase / handler はこれに触れない(触りたくなったら repository/readmodel の仕事)
 	DB *sql.DB
 
+	// Tracing はサーバ span のミドルウェア(telemetry.Tracer.Middleware())。nil なら計測なし。
+	Tracing func(http.Handler) http.Handler
+
 	closers []func() error
 }
 
@@ -153,18 +160,16 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	authzDB, err := sql.Open("mysql", cfg.LocalAuthzDSN)
+	authzDB, err := openDB(cfg.LocalAuthzDSN)
 	if err != nil {
 		return nil, fmt.Errorf("localauthz store: %w", err)
 	}
-	authzDB = configureDB(authzDB)
 	store := localauthz.New(authzDB, actionRelations)
 
-	db, err := sql.Open("mysql", cfg.DSN)
+	db, err := openDB(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("photo db: %w", err)
 	}
-	db = configureDB(db)
 	images, err := blobstore.NewS3Store(ctx, cfg.Images)
 	if err != nil {
 		return nil, err
@@ -209,11 +214,10 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	ts := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, cfg.M2M.Scopes...)
 	store := authzhttp.New(cfg.AuthzURL, httpclient.Client(ts))
 
-	db, err := sql.Open("mysql", cfg.DSN)
+	db, err := openDB(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("photo db: %w", err)
 	}
-	db = configureDB(db)
 	images, err := blobstore.NewS3Store(ctx, cfg.Images)
 	if err != nil {
 		return nil, err
@@ -258,6 +262,7 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	}
 	base := httpapi.Options{
 		Service: "photo", Version: Version, Authenticator: deps.Authenticator,
+		Tracing: deps.Tracing,
 		// デプロイ識別子。ECS ではタスク定義リビジョン等を入れる。カナリア観測用（#172）
 		Revision: envOr("SERVICE_REVISION", Version),
 	}
@@ -292,11 +297,24 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.OIDCIssuer != "" {
 		build = OIDCDeps
 	}
+	// トレース(#214 / 10.2)。OTEL_EXPORTER_OTLP_ENDPOINT 未設定なら無効。
+	// deps の**前**に組む: HTTP クライアントが DefaultTransport をこの後で捕まえるため
+	tracer, err := telemetry.NewTracer(ctx, "photo")
+	if err != nil {
+		slog.Warn("トレース送出を組み立てられないので無効で続行", "err", err)
+		tracer = &telemetry.Tracer{}
+	}
+	tracerProvider = tracer.TracerProvider()
+	if tracer.Enabled() {
+		http.DefaultTransport = tracer.WrapTransport(http.DefaultTransport)
+	}
+
 	deps, err := build(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer deps.Close()
+	deps.Tracing = tracer.Middleware()
 
 	// 昇格シグナルのメトリクス(#59)。契約(OpenAPI)や認証の面と混ぜないため専用ポート。
 	// METRICS_ADDR 未設定なら出さない(テスト・スペック生成で余計なリスナーを立てない)
@@ -340,7 +358,12 @@ func Run(ctx context.Context, cfg Config) error {
 		defer stopMetrics()
 		reg.Serve(metricsCtx, cfg.MetricsAddr)
 	}
-	return RunWith(ctx, cfg, deps)
+	err = RunWith(ctx, cfg, deps)
+	// 排水の一部: 未送信の span を吐き切ってから戻る(10.8 と同じ思想)
+	fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer fcancel()
+	_ = tracer.Shutdown(fctx)
+	return err
 }
 
 // RunWith は組み立て済みの差し込み口でサーバを起動する。
@@ -459,6 +482,24 @@ func imageConfigFromEnv() blobstore.Config {
 // という「観測が実装より先行」の状態を #215 で解消)。本番値は逆算で決める:
 // MaxOpenConns × タスク数 × プロセス内の DB 接続数 < max_connections。
 // ConnMaxLifetime はフェイルオーバー後の宛先切替を保証する(古い接続を持ち続けない)。
+// tracerProvider は openDB(otelsql)が使うプロバイダ。serve の Run が設定する。
+// グローバルにしないのは、allinone で複数サービスが同居すると後勝ちになり
+// span の service.name が別サービスに化けるため(#214 実測)。
+// relay / consume 等のサブコマンドでは未設定 = no-op(計測なし)。
+var tracerProvider trace.TracerProvider = noop.NewTracerProvider()
+
+// openDB は計測ドライバ(otelsql。DB span)で開き、プール設定(10.5)を適用する。
+// トレース無効時は span が no-op になるだけで挙動は変わらない。
+func openDB(dsn string) (*sql.DB, error) {
+	db, err := otelsql.Open("mysql", dsn,
+		otelsql.WithTracerProvider(tracerProvider),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{OmitConnResetSession: true, OmitConnPrepare: true, OmitRows: true}))
+	if err != nil {
+		return nil, err
+	}
+	return configureDB(db), nil
+}
+
 func configureDB(db *sql.DB) *sql.DB {
 	db.SetMaxOpenConns(envIntOr("DB_MAX_OPEN_CONNS", 25))
 	db.SetMaxIdleConns(envIntOr("DB_MAX_IDLE_CONNS", 25))

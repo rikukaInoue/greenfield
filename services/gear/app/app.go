@@ -19,6 +19,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql" // localauthz ストアへの接続に使う driver は合成ルートが選ぶ
 
+	"github.com/XSAM/otelsql"
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/authz/devtoken"
 	"github.com/rikukaInoue/greenfield/core/authz/localauthz"
@@ -36,6 +37,9 @@ import (
 	"github.com/rikukaInoue/greenfield/services/gear/readmodel"
 	"github.com/rikukaInoue/greenfield/services/gear/repository"
 	"github.com/rikukaInoue/greenfield/services/gear/usecase"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/rikukaInoue/greenfield/telemetry"
 )
 
@@ -117,6 +121,9 @@ type Deps struct {
 	// DB は業務データのプール。合成ルートが昇格シグナル(プール使用率)の観測に使う(#59)
 	DB *sql.DB
 
+	// Tracing はサーバ span のミドルウェア(telemetry.Tracer.Middleware())。nil なら計測なし。
+	Tracing func(http.Handler) http.Handler
+
 	closers []func() error
 }
 
@@ -145,17 +152,15 @@ func LocalDeps(_ context.Context, cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("mysql", cfg.LocalAuthzDSN)
+	db, err := openDB(cfg.LocalAuthzDSN)
 	if err != nil {
 		return nil, fmt.Errorf("localauthz store: %w", err)
 	}
-	db = configureDB(db)
 	store := localauthz.New(db, actionRelations)
-	gearDB, err := sql.Open("mysql", cfg.DSN)
+	gearDB, err := openDB(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("gear db: %w", err)
 	}
-	gearDB = configureDB(gearDB)
 	// dev ループでは photo も staticauthn なので、devtoken の M2M（svc-gear、
 	// scope internal:photo）で呼ぶ。Idempotency-Key と traceparent の付与は
 	// 本番と同じ core/httpclient を通る
@@ -191,11 +196,10 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if cfg.M2M.TokenURL == "" || cfg.M2M.ClientSecret == "" {
 		return nil, fmt.Errorf("photo internal を呼ぶ M2M 資格情報が未設定（M2M_TOKEN_URL / M2M_CLIENT_SECRET）")
 	}
-	gearDB, err := sql.Open("mysql", cfg.DSN)
+	gearDB, err := openDB(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("gear db: %w", err)
 	}
-	gearDB = configureDB(gearDB)
 	ts := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, cfg.M2M.Scopes...)
 	photos, err := photocatalog.New(cfg.PhotoInternalURL, httpclient.Client(ts))
 	if err != nil {
@@ -220,11 +224,14 @@ func APIs(deps *Deps) map[httpapi.Listener]httpapi.API {
 	var azr authz.Authorizer
 	var lister authz.Lister
 	var assurance authz.AssuranceChecker
+	var tracing func(http.Handler) http.Handler
 	if deps != nil {
 		authn, azr, lister, assurance = deps.Authenticator, deps.Authorizer, deps.Lister, deps.Assurance
+		tracing = deps.Tracing
 	}
 	base := httpapi.Options{
 		Service: "gear", Version: Version, Authenticator: authn,
+		Tracing:  tracing,
 		Revision: envOr("SERVICE_REVISION", Version), // カナリア観測用（#172）
 	}
 
@@ -261,11 +268,24 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.OIDCIssuer != "" {
 		build = OIDCDeps
 	}
+	// トレース(#214 / 10.2)。OTEL_EXPORTER_OTLP_ENDPOINT 未設定なら無効。
+	// deps の**前**に組む: HTTP クライアントが DefaultTransport をこの後で捕まえるため
+	tracer, err := telemetry.NewTracer(ctx, "gear")
+	if err != nil {
+		slog.Warn("トレース送出を組み立てられないので無効で続行", "err", err)
+		tracer = &telemetry.Tracer{}
+	}
+	tracerProvider = tracer.TracerProvider()
+	if tracer.Enabled() {
+		http.DefaultTransport = tracer.WrapTransport(http.DefaultTransport)
+	}
+
 	deps, err := build(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer deps.Close()
+	deps.Tracing = tracer.Middleware()
 
 	// 昇格シグナルのメトリクス(#59)。photo と同じ規約(専用ポート、未設定なら出さない)
 	if cfg.MetricsAddr != "" && deps.DB != nil {
@@ -284,7 +304,12 @@ func Run(ctx context.Context, cfg Config) error {
 		defer stopMetrics()
 		reg.Serve(metricsCtx, cfg.MetricsAddr)
 	}
-	return RunWith(ctx, cfg, deps)
+	err = RunWith(ctx, cfg, deps)
+	// 排水の一部: 未送信の span を吐き切ってから戻る(10.8 と同じ思想)
+	fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer fcancel()
+	_ = tracer.Shutdown(fctx)
+	return err
 }
 
 // RunWith は組み立て済みの差し込み口でサーバを起動する。
@@ -368,6 +393,24 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 // という「観測が実装より先行」の状態を #215 で解消)。本番値は逆算で決める:
 // MaxOpenConns × タスク数 × プロセス内の DB 接続数 < max_connections。
 // ConnMaxLifetime はフェイルオーバー後の宛先切替を保証する(古い接続を持ち続けない)。
+// tracerProvider は openDB(otelsql)が使うプロバイダ。serve の Run が設定する。
+// グローバルにしないのは、allinone で複数サービスが同居すると後勝ちになり
+// span の service.name が別サービスに化けるため(#214 実測)。
+// relay / consume 等のサブコマンドでは未設定 = no-op(計測なし)。
+var tracerProvider trace.TracerProvider = noop.NewTracerProvider()
+
+// openDB は計測ドライバ(otelsql。DB span)で開き、プール設定(10.5)を適用する。
+// トレース無効時は span が no-op になるだけで挙動は変わらない。
+func openDB(dsn string) (*sql.DB, error) {
+	db, err := otelsql.Open("mysql", dsn,
+		otelsql.WithTracerProvider(tracerProvider),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{OmitConnResetSession: true, OmitConnPrepare: true, OmitRows: true}))
+	if err != nil {
+		return nil, err
+	}
+	return configureDB(db), nil
+}
+
 func configureDB(db *sql.DB) *sql.DB {
 	db.SetMaxOpenConns(envIntOr("DB_MAX_OPEN_CONNS", 25))
 	db.SetMaxIdleConns(envIntOr("DB_MAX_IDLE_CONNS", 25))

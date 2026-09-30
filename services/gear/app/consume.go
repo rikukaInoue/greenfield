@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -52,11 +51,10 @@ func (a inboxAdapter) MarkProcessed(ctx context.Context, ev usecase.Event) error
 // 処理は「inbox 記録 + 業務処理」を同一 tx で行い、成功したものだけ削除する。
 // 削除前の停止は再配信になるが inbox が弾く（check #9）。
 func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
-	db, err := sql.Open("mysql", cfg.DSN)
+	db, err := openDB(cfg.DSN)
 	if err != nil {
 		return fmt.Errorf("gear db: %w", err)
 	}
-	db = configureDB(db)
 	defer db.Close()
 	events := usecase.NewPhotoEvents(consistency.NewAtomic(db), inboxAdapter{}, replicaview.NewPhotoReplica(db))
 
@@ -86,11 +84,10 @@ func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
 // このあと photo 側で `photo republish --since` を実行すると consumer が再適用する
 // （再生の正は outbox。check #10）。
 func RebuildReplica(ctx context.Context, cfg ConsumeConfig) error {
-	db, err := sql.Open("mysql", cfg.DSN)
+	db, err := openDB(cfg.DSN)
 	if err != nil {
 		return fmt.Errorf("gear db: %w", err)
 	}
-	db = configureDB(db)
 	defer db.Close()
 	r := replicaview.NewPhotoReplica(db)
 	if err := r.Rebuild(ctx, []string{"photo.published", "photo.deleted"}); err != nil {
@@ -106,11 +103,10 @@ func RebuildReplica(ctx context.Context, cfg ConsumeConfig) error {
 
 // ReplicaStatus は複製の行数と指紋を出す（check #10 の一致検査に使う）。
 func ReplicaStatus(ctx context.Context, cfg ConsumeConfig) error {
-	db, err := sql.Open("mysql", cfg.DSN)
+	db, err := openDB(cfg.DSN)
 	if err != nil {
 		return fmt.Errorf("gear db: %w", err)
 	}
-	db = configureDB(db)
 	defer db.Close()
 	fp, n, err := replicaview.NewPhotoReplica(db).Fingerprint(ctx)
 	if err != nil {

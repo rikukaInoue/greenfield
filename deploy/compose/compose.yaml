@@ -90,6 +90,17 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
+  tempo:
+    profiles: ["obs"]
+    image: grafana/tempo:2.9.0
+    container_name: greenfield-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "127.0.0.1:3200:3200" # クエリ API
+      - "127.0.0.1:4318:4318" # OTLP HTTP(アプリは OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318)
+
   grafana:
     profiles: ["obs"]
     image: grafana/grafana:12.3.3
@@ -105,6 +116,8 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       prometheus:
+        condition: service_started
+      tempo:
         condition: service_started
 
   keycloak:

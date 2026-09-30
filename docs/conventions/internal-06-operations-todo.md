@@ -47,9 +47,18 @@
 
 SQL 由来の gauge は「読めない」を **-1** で返す（0=滞留なし と 欠測 を混同しない。fail open にしない）。
 
-#### トレース（TBD）
+#### トレース（確定。#214）
 
-上のログ規約が `trace_id` / `span_id` を既に持つので、OTel SDKを入れる時は `core/middleware.Correlate` を手書きの伝播からSDKのpropagatorへ差し替える。OTel SDKをcoreへ入れないのは、全利用者がexporterとその依存を抱えることになるため（いま要るのは「ヘッダ形式を守って引き継ぐ」ことだけ）。otel-collector + jaeger（02-architecture）はこのタイミングで立てる。
+OTel SDK は `telemetry` に置き、**core には入れない**（`core/middleware.Correlate` は stdlib の手書き伝播のまま。全利用者に exporter とその依存を抱えさせない、という当初判断を維持した）。差し替えたのは伝播でなく**採番の向き**で、Correlate が採番した `trace_id` / `span_id` を SDK の IDGenerator がそのまま使う。これにより **canonical log line の trace_id / span_id と span の ID が同一**になり（実測: ログの trace_id で Tempo からトレースを取得、ログの span_id = サーバ span の ID）、相関の主キーは増えない。
+
+- **サーバ span**: `telemetry.Tracer.Middleware()` を `httpapi.Options.Tracing`（基盤スタック直後・認証より前。core は注入口だけ持つ）へ。401 で落ちるリクエストにも span が付く
+- **クライアント span**: `Tracer.WrapTransport` を合成ルートで `http.DefaultTransport` に適用。W3C propagator（`TraceContext`）が traceparent を注入し、httpclient の手書きヘッダを正しい親（クライアント span）で上書きする
+- **DB span**: `openDB`（otelsql）。**TracerProvider は明示渡し**——グローバルは 1 プロセス複数サービス（allinone）で後勝ちになり、span の service.name が別サービスに化ける（実測）。allinone ではクライアント span の帰属だけこの制約が残る（プロセス分離では正しい）
+- **無効が既定**: `OTEL_EXPORTER_OTLP_ENDPOINT` 未設定なら何も送らず、ミドルウェアは素通し。計測の有無がアプリの挙動を変えない
+- **バックエンド**: compose の obs プロファイルに Tempo（OTLP :4318 / クエリ :3200）。Grafana にデータソース済み。jaeger でなく Tempo にしたのは Grafana との統合が provisioning 1 ファイルで済むため
+- 排水（10.8）との整合: serve の停止時に `Tracer.Shutdown` で未送信 span を吐き切る
+
+実測（allinone + Tempo）: 紐付けつき投稿 1 リクエストで **25 span が 1 トレース**に載る——photo サーバ span → クライアント span → gear サーバ span（親子が正しく連鎖）+ 両サービスの SQL span（begin_tx / query / exec / commit）+ フラグ評価。検証ログ: 2026-09-30-stage-82。
 
 <!-- 10.2 は internal/05-database.md へ分離済み -->
 
