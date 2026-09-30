@@ -215,3 +215,53 @@ func forceDirty(db *sql.DB, version int) error {
 	_, err := db.Exec("UPDATE photo_migrations_expand SET version = ?, dirty = 1", version)
 	return err
 }
+
+// PendingCount の数え方(#200)。埋め込み一覧と適用済みバージョンの純粋な突き合わせ部分。
+func TestPendingCountLogic(t *testing.T) {
+	versions, err := embeddedVersions(Contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) == 0 {
+		t.Fatal("contract の埋め込みが読めていない(0件はこのリポジトリでは前提崩れ)")
+	}
+	if n := pendingCount(versions, 0); n != len(versions) {
+		t.Fatalf("未適用(applied=0)なら全件のはず: got %d want %d", n, len(versions))
+	}
+	max := versions[len(versions)-1]
+	if n := pendingCount(versions, max); n != 0 {
+		t.Fatalf("最新まで適用済みなら 0 のはず: got %d", n)
+	}
+	if n := pendingCount(versions, versions[0]); n != len(versions)-1 {
+		t.Fatalf("1件適用済みなら残り %d のはず: got %d", len(versions)-1, n)
+	}
+}
+
+// 履歴テーブルが無い database では「全件未適用」として数える(エラーにしない)。
+// テーブル欠如を -1(観測不能)にすると、初回デプロイ前が永遠に欠測になる。
+func TestPendingCountWithoutHistoryTable(t *testing.T) {
+	testDSN(t) // 到達性チェック(届かなければ skip)だけ流用する
+	root, _, err := openDB("root:root@tcp(127.0.0.1:13306)/mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	ctx := context.Background()
+	if _, err := root.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS migrations_scratch"); err != nil {
+		t.Fatal(err)
+	}
+	defer root.ExecContext(ctx, "DROP DATABASE migrations_scratch")
+	db, _, err := openDB("root:root@tcp(127.0.0.1:13306)/migrations_scratch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	n, err := PendingCount(ctx, db, Contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, _ := embeddedVersions(Contract)
+	if n != len(versions) {
+		t.Fatalf("履歴テーブルの無い database では全件未適用のはず: got %d want %d", n, len(versions))
+	}
+}
