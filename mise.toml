@@ -73,7 +73,7 @@ run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exi
 
 [tasks.check]
 description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check + client:check（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "sqlc:check", "api:check", "client:check", "api:breaking:test"]
+depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "lint:drift", "sqlc:check", "api:check", "client:check", "api:breaking:test"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -151,6 +151,10 @@ run = "dev/scripts/api-breaking.sh"
 [tasks."lint:imports"]
 description = "モジュール内の import 規律を検証する（replicaview / 差し込み口の実装）"
 run = 'for s in $(mise run services); do echo "== $s"; (cd $s && GOWORK=off golangci-lint run --config ../../.golangci.yml ./...) || exit 1; done'
+
+[tasks."lint:drift"]
+description = "共有依存のバージョン乖離を観測する(#205)。警告のみ(exit 0)——fail にすると依存更新 PR が片側から通せない。締めるなら -strict"
+run = "go run ./dev/driftcheck"
 
 [tasks."lint:replaces"]
 description = "モジュール間 require の replace 漏れと、Dockerfile の COPY 漏れを検査(#163)"
