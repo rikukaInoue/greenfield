@@ -39,10 +39,12 @@ jobs:
           - { name: photo, dir: services/photo }
           - { name: gear, dir: services/gear }
           - { name: authz, dir: platform/authz }
-    env:
-      IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
+
+      # イメージ名は小文字しか許されない（GITHUB_REPOSITORY はowner の大文字を含む）
+      - name: イメージ名を決める
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.name }}" >> "$GITHUB_ENV"
 
       - uses: sigstore/cosign-installer@v3
 
