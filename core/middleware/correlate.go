@@ -125,6 +125,7 @@ func randHex(n int) string {
 //
 //	Correlate  最も外。これ以降の全ログに trace_id が乗る
 //	AccessLog  次。Recover が書いた 500 も「最終ステータス」として記録できる
+//	Deadline   AccessLog の内側。到着時点で締め切り切れの 504 もアクセスログに残す(#268)
 //	Recover    内。認証・ハンドラのパニックを problem に変換する
 //
 // Recover を AccessLog の外に置くと、パニック時に AccessLog の記録が走らず
@@ -134,6 +135,7 @@ func Base(render RenderError) []func(http.Handler) http.Handler {
 	return []func(http.Handler) http.Handler{
 		Correlate,
 		AccessLog,
+		Deadline(DefaultRequestDeadline),
 		Recover(render),
 	}
 }

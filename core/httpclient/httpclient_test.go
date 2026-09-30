@@ -2,9 +2,12 @@ package httpclient
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/rikukaInoue/greenfield/core/middleware"
 )
@@ -97,5 +100,53 @@ func TestOriginalRequestNotMutated(t *testing.T) {
 	res.Body.Close()
 	if req.Header.Get("Authorization") != "" || req.Header.Get("Idempotency-Key") != "" {
 		t.Fatal("元リクエストが書き換えられている")
+	}
+}
+
+// デッドライン伝播(#268): ctx の残り時間がヘッダで下流へ渡る
+func TestDeadlinePropagated(t *testing.T) {
+	s, got := record(t)
+	c := Client(StaticTokenSource("tok"))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
+	if _, err := c.Do(req); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := strconv.ParseInt((*got)[0].Get(middleware.HeaderRequestTimeout), 10, 64)
+	if err != nil || ms <= 0 || ms > 3000 {
+		t.Fatalf("%s = %q, want (0, 3000]", middleware.HeaderRequestTimeout, (*got)[0].Get(middleware.HeaderRequestTimeout))
+	}
+}
+
+// 呼び出し元に締め切りが無くても、クライアント自身の上限(10s)が伝わる。
+// http.Client.Timeout は Go の内部でリクエスト ctx に締め切りを付けるため、
+// 下流は「このクライアントが待てる時間」より長く粘らない(ヒエラルキーどおり)
+func TestClientTimeoutPropagatedWithoutCallerDeadline(t *testing.T) {
+	s, got := record(t)
+	c := Client(StaticTokenSource("tok"))
+	req, _ := http.NewRequest(http.MethodGet, s.URL, nil)
+	if _, err := c.Do(req); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := strconv.ParseInt((*got)[0].Get(middleware.HeaderRequestTimeout), 10, 64)
+	if err != nil || ms <= 9000 || ms > 10000 {
+		t.Fatalf("%s = %q, want (9000, 10000]", middleware.HeaderRequestTimeout, (*got)[0].Get(middleware.HeaderRequestTimeout))
+	}
+}
+
+// 残り時間が尽きた呼び出しは送らない(誰も待っていない仕事を下流に始めさせない)
+func TestExpiredDeadlineNotSent(t *testing.T) {
+	s, got := record(t)
+	c := Client(StaticTokenSource("tok"))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
+	_, err := c.Do(req)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want DeadlineExceeded", err)
+	}
+	if len(*got) != 0 {
+		t.Fatalf("尽きた締め切りで %d 回送信された", len(*got))
 	}
 }
