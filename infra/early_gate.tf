@@ -66,60 +66,11 @@ variable "hook_devtoken" {
 data "archive_file" "gate_hook" {
   type        = "zip"
   output_path = "${path.module}/.terraform/gate_hook.zip"
+  # 判定ロジックは hook/index.py(単体テスト付き。#226)。tf の heredoc に書かない——
+  # ゲートは壊れると「全部止める」か「壊れた版を通す」に倒れるので、テストで固定する
   source {
     filename = "index.py"
-    content  = <<-PY
-      import json, os, urllib.request, urllib.error
-      import boto3
-
-      _ssm = boto3.client("ssm")
-      _token = None
-
-      def token():
-          # devtoken は Lambda の環境変数に平文で置かず、実行時に SSM から解決する(#210)
-          global _token
-          if _token is None:
-              _token = _ssm.get_parameter(
-                  Name=os.environ["DEVTOKEN_PARAM"], WithDecryption=True
-              )["Parameter"]["Value"]
-          return _token
-
-      def check():
-          base = os.environ["TEST_URL"]
-          # 1) 到達性
-          for _ in range(3):
-              with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
-                  if r.status != 200:
-                      return False, f"healthz {r.status}"
-          # 2) 書き込み(green の DB 経路まで通す)。healthz が緑でも書けない版をここで落とす
-          req = urllib.request.Request(
-              base + "/v2/photos",
-              data=json.dumps({"caption": "gate-hook", "content_type": "image/png"}).encode(),
-              headers={
-                  "Content-Type": "application/json",
-                  "Authorization": "Bearer " + token(),
-              },
-              method="POST",
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=10) as r:
-                  if r.status != 201:
-                      return False, f"create {r.status}"
-          except urllib.error.HTTPError as e:
-              return False, f"create {e.code}"
-          return True, "ok"
-
-      def handler(event, context):
-          print("event:", json.dumps(event))
-          try:
-              ok, why = check()
-          except Exception as e:  # 到達不能等
-              ok, why = False, repr(e)
-          print("verdict:", why)
-          # ECS デプロイライフサイクルフックの契約: hookStatus を返す。
-          # FAILED を返すとデプロイは失敗しロールバックする(本番トラフィックは動いていない)
-          return {"hookStatus": "SUCCEEDED" if ok else "FAILED"}
-    PY
+    content  = file("${path.module}/hook/index.py")
   }
 }
 
@@ -137,8 +88,8 @@ resource "aws_iam_role_policy_attachment" "gate_hook_logs" {
 }
 
 resource "aws_ssm_parameter" "hook_devtoken" {
-  name  = "/greenfield/71/hook-devtoken"
-  type  = "SecureString"
+  name = "/greenfield/71/hook-devtoken"
+  type = "SecureString"
   # SSM は空値を拒否する。フック未使用の apply でも通るよう番人値を置く
   value = var.hook_devtoken != "" ? var.hook_devtoken : "unset"
 }

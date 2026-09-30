@@ -1,0 +1,28 @@
+# 検査の検査(#226)。「ずっと成功し続けている検査」を四半期に一度、機械で疑う。
+# 落ちたら issue を起票する(黙って赤いまま放置される scheduled run にしない)。
+name: audit
+on:
+  schedule:
+    - cron: "0 0 1 1,4,7,10 *" # 四半期の1日
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  meta-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+      - name: 検査ツール自身の回帰テストを一括実行
+        run: mise run audit:checks
+      - name: 落ちたら issue を起票する
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "[audit] 検査の検査が落ちた ($(date +%Y-%m-%d))" \
+            --body "定期監査(audit.yml)で検査ツール自身の回帰テストが失敗した。壊れた検査は成功として出てくるため、これは**全検査の信頼性の問題**として扱う。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
