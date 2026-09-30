@@ -1,0 +1,67 @@
+# 依存を「常に新しい状態」に保つ(#181)。脆弱性は見つけるより、CVE 公表時点で
+# 既に直っている状態を作る方が効く——半年放置すると1個の CVE 修正が10バージョン跨ぐ。
+#
+# 運用の決め:
+# - grouped は必須。無いと週20本の PR が来て全部無視される側に倒れる
+# - gomod は directories でまとめて1本の PR にする。片方のモジュールだけ上がると
+#   共有依存のドリフト(lint:drift が観測する)になるため、全 go.mod を同じ PR で
+#   同時に上げる形が構造的に正しい
+# - 自動マージはまだ有効にしない。前提は「テストが本当に落ちること」で、
+#   認可の総当たりテスト(#182)が入ってから patch のみ検討する
+# - Dependabot alerts と govulncheck(#180) が食い違ったら govulncheck を採る。
+#   alerts は到達性を見ない。Dismiss には理由を書く(「govulncheck で到達不能」)
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - "/core"
+      - "/dev"
+      - "/flagprovider/appconfig"
+      - "/platform/authz"
+      - "/services/gear"
+      - "/services/gear-client"
+      - "/services/photo"
+      - "/services/photo-client"
+      - "/telemetry"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    groups:
+      go-deps:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    # major は group から外れて個別 PR になる。破壊的変更は1個ずつ読む
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    groups:
+      npm-deps:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 5
+
+  # サードパーティ Action は CI に任意コードを流し込む経路で、しかも誰も更新しない
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
