@@ -236,6 +236,7 @@ func principal(c *claims) authz.Principal {
 	p := authz.Principal{Subject: c.Sub, Kind: authz.PrincipalUser, Scopes: strings.Fields(c.Scope), AAL: authz.AAL1}
 	// Keycloak の client_credentials トークンは client_id クレームを持つ（service account）。
 	// 人間のトークンには無い。ここで主体の種別を分ける
+	p.AuthorizedParty = c.Azp // 人間の対話トークンにも載る。監査で「どのアプリが叩いたか」(#14)
 	if c.ClientID != "" {
 		p.Kind = authz.PrincipalService
 		p.ClientID = c.ClientID

@@ -9,6 +9,7 @@ import (
 
 	"github.com/rikukaInoue/greenfield/core/authz"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
+	"github.com/rikukaInoue/greenfield/core/logger"
 	"github.com/rikukaInoue/greenfield/core/problem"
 	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 )
@@ -102,8 +103,14 @@ func (h *handlers) adminListPhotos(ctx context.Context, in *AdminListPhotosInput
 }
 
 func (h *handlers) adminDeleteAccount(ctx context.Context, in *AdminDeleteAccountInput) (*AdminDeleteAccountOutput, error) {
+	// 危険操作は誰が/何が試みたかを必ず記録する(#14)。**AAL の判定より前**に出すのは、
+	// 401 で止まった試行こそ監査したいため(自律エージェントの昇格失敗が痕跡に残る)。
+	// client_id は M2M/エージェントのトークンにだけ載る = 「人でなく機械が叩いた」の証跡。
+	audit(ctx, "admin.account.delete.attempt", in.Subject)
+
 	// 保証レベルの要求はミドルウェアのパスマッピングではなくハンドラに明示する。
 	if err := h.deps.Assurance.RequireAAL(ctx, authz.AAL2); err != nil {
+		audit(ctx, "admin.account.delete.challenged", in.Subject)
 		return nil, err
 	}
 	if err := h.requireOperator(ctx); err != nil {
@@ -113,6 +120,7 @@ func (h *handlers) adminDeleteAccount(ctx context.Context, in *AdminDeleteAccoun
 	if err != nil {
 		return nil, problem.New(http.StatusInternalServerError, problem.CodeInternal, "内部エラー")
 	}
+	audit(ctx, "admin.account.delete.completed", in.Subject)
 	out := &AdminDeleteAccountOutput{}
 	out.Body.DeletedPhotos = n
 	return out, nil
@@ -128,4 +136,31 @@ func (h *handlers) requireOperator(ctx context.Context) error {
 		return problem.New(http.StatusForbidden, problem.CodeForbidden, "オペレータ権限が必要")
 	}
 	return nil
+}
+
+// audit は特権操作の試行を actor の identity つきで記録する(#14)。
+// client_id は M2M/エージェントのトークンにだけ載るため、「人か機械か」がここで分かれる。
+// AccessLog(認証より外側)では principal を読めないので、判定点で明示的に出す。
+func audit(ctx context.Context, event, target string) {
+	l := logger.FromContext(ctx)
+	if p, ok := authz.PrincipalFrom(ctx); ok {
+		l.InfoContext(ctx, "audit",
+			"audit.event", event,
+			"actor.subject", p.Subject,
+			"actor.client_id", clientOf(p), // 叩いたアプリ(azp)。純 M2M では client_id と同値
+			"actor.kind", int(p.Kind),
+			"actor.aal", int(p.AAL),
+			"target", target)
+		return
+	}
+	l.InfoContext(ctx, "audit", "audit.event", event, "target", target, "actor", "unauthenticated")
+}
+
+// clientOf は監査に載せるクライアント識別子を返す。azp(アプリ)を優先し、
+// 純 M2M(azp を持たない古い OP 等)では client_id にフォールバックする。
+func clientOf(p authz.Principal) string {
+	if p.AuthorizedParty != "" {
+		return p.AuthorizedParty
+	}
+	return p.ClientID
 }
