@@ -83,3 +83,4 @@
 - [認可の総当たり: 全ルート × 他人のトークン / 無認証（#182）](2026-09-30-authsweep.md)
 - [React Router SSR 固有の攻撃面をテストで固定する（#186）](2026-09-30-ssr-attack-surface.md)
 - [frontend の依存検査: osv-scanner + pnpm audit + Node ランタイム（#183）](2026-09-30-frontend-deps.md)
+- [npm サプライチェーン: ビルドスクリプトの許可リスト化（#184）](2026-09-30-npm-supply-chain.md)
