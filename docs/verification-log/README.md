@@ -90,3 +90,4 @@
 - [gosec を段階導入する（#188）](2026-09-30-gosec.md)
 - [ZAP baseline（passive）を夜間に回す（#189）](2026-09-30-zap-baseline.md)
 - [ZAP API scan（active）を週次で回す（#190）](2026-09-30-zap-api.md)
+- [配る側のサプライチェーン証明: SBOM・署名・provenance（#218）](2026-09-30-supply-chain.md)
