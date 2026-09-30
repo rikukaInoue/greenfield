@@ -1,0 +1,125 @@
+# 配る側のサプライチェーン証明（#218 / gap-9）。検出系（#194 の5層）が「入ってくるもの」を
+# 見るのに対し、こちらは「出ていくもの」に証明を付ける——このイメージは何からできていて
+# （SBOM）、どこで誰がビルドし（provenance）、改竄されていないか（署名）。
+#
+# 適応度関数はこのワークフロー自身の検証ステップ: 署名と provenance を**その場で検証**し、
+# 通らなければ落ちる。「署名したつもり」と「検証可能」を区別する（作って終わりにしない）。
+#
+# レジストリへの公開（GHCR push + イメージ署名）は publish 入力を true にしたときだけ。
+# 既定は公開なし——イメージの tar に対して SBOM・provenance・署名を作り検証する。
+# （cosign keyless の署名記録は公開の Rekor 透明性ログに、provenance はこのリポジトリの
+# attestation ストアに載る。どちらもハッシュとメタデータのみ）
+name: Supply chain
+
+on:
+  schedule:
+    # 月曜 05:47 JST
+    - cron: "47 20 * * 0"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "GHCR へ push して イメージ自体に署名する（外部公開。要ユーザー承認）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # cosign keyless（GitHub OIDC で証明書を得る）
+  attestations: write # provenance を repo の attestation ストアへ
+  packages: write # publish=true のときだけ実際に使う
+
+jobs:
+  attest:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: photo, dir: services/photo }
+          - { name: gear, dir: services/gear }
+          - { name: authz, dir: platform/authz }
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: イメージをビルドする
+        run: |
+          docker build -f "${{ matrix.dir }}/Dockerfile" -t "$IMAGE:$GITHUB_SHA" .
+          docker save "$IMAGE:$GITHUB_SHA" -o image.tar
+
+      # SBOM: このイメージは何からできているか。CVE が出た日に「うちに入っているか」を
+      # レジストリを再スキャンせずに答えられるようにする
+      - name: SBOM を生成する（syft / SPDX）
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.name }}.spdx.json
+          upload-artifact: false
+
+      - name: SBOM の空振りガード
+        run: |
+          n=$(python3 -c "import json;print(len(json.load(open('sbom-${{ matrix.name }}.spdx.json')).get('packages',[])))")
+          echo "SBOM パッケージ数: $n"
+          if [ "$n" -lt 10 ]; then
+            echo "SBOM のパッケージが ${n} 個しかない。生成が空振りしている" >&2
+            exit 1
+          fi
+
+      # provenance: このアーティファクトはこのリポジトリのこのコミット・このワークフローで
+      # ビルドされた、という SLSA 由来の証明。GitHub の attestation ストアに載る
+      - name: provenance を付ける
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: image.tar
+
+      # 署名（keyless）: 鍵の保管をやめ、GitHub OIDC の実行時証明書で署名する。
+      # 検証側は「どの鍵か」でなく「どのリポジトリのどのワークフローか」を確かめる
+      - name: 署名する（cosign keyless）
+        run: cosign sign-blob --yes --bundle "cosign-${{ matrix.name }}.bundle" image.tar
+
+      # ---- 適応度関数: その場で検証が通らなければ落ちる ----
+      - name: 検証（署名）
+        run: |
+          cosign verify-blob \
+            --bundle "cosign-${{ matrix.name }}.bundle" \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/supply-chain\.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            image.tar
+          echo "ok: 署名はこのリポジトリのこのワークフロー由来として検証できた"
+
+      - name: 検証（provenance）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify image.tar --repo "${{ github.repository }}"
+          echo "ok: provenance を GitHub の attestation ストアで検証できた"
+
+      - name: SBOM と署名バンドルを保存する
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-${{ matrix.name }}
+          path: |
+            sbom-${{ matrix.name }}.spdx.json
+            cosign-${{ matrix.name }}.bundle
+          retention-days: 30
+
+      # ---- ここから下は公開（要ユーザー承認。既定では走らない） ----
+      - name: GHCR へ push してイメージに署名する
+        if: inputs.publish == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:$GITHUB_SHA"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")
+          cosign sign --yes "$digest"
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/supply-chain\.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$digest"
+          echo "ok: レジストリ上のイメージ署名も検証できた"
