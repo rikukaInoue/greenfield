@@ -167,8 +167,10 @@ description = "base（既定 origin/main）に対する破壊的変更を検出�
 run = "dev/scripts/api-breaking.sh"
 
 [tasks."lint:imports"]
-description = "モジュール内の import 規律を検証する（replicaview / 差し込み口の実装）"
-run = 'for s in $(mise run services); do echo "== $s"; (cd $s && GOWORK=off golangci-lint run --config ../../.golangci.yml ./...) || exit 1; done'
+description = "モジュール内の import 規律（replicaview / 差し込み口）と gosec（#188）を全モジュールで検証する"
+# gosec の導入(#188)で対象を services だけから全モジュールへ広げた。SAST の価値が
+# 一番高いのは認証・認可・HTTP を持つ core であるため。除外は .golangci.yml に理由つき
+run = 'cfg=$PWD/.golangci.yml; for s in $(mise run modules); do echo "== $s"; (cd $s && GOWORK=off golangci-lint run --config "$cfg" ./...) || exit 1; done'
 
 [tasks."lint:drift"]
 description = "共有依存のバージョン乖離を観測する(#205)。警告のみ(exit 0)——fail にすると依存更新 PR が片側から通せない。締めるなら -strict"
