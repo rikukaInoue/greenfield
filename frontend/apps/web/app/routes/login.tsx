@@ -2,16 +2,12 @@ import { data, Form, redirect } from "react-router";
 import type { Route } from "./+types/login";
 import { mintDevToken } from "../.server/devtoken";
 import { env } from "../.server/env";
+import { safeReturnTo } from "../.server/returnto";
 import { sessionStorage } from "../.server/session";
-
-// safeReturnTo はオープンリダイレクトを防ぐため、同一オリジンのパスだけを通す。
-function safeReturnTo(v: string | null): string {
-  return v && v.startsWith("/") && !v.startsWith("//") ? v : "/";
-}
 
 export function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  const returnTo = safeReturnTo(url.searchParams.get("returnTo"));
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), url);
   // OIDC が構成されていて dev ログインが無効なら、選択肢は無いので直接 Keycloak へ
   if (env.oidc && !env.devLogin) {
     throw redirect(`/auth/login?${new URLSearchParams({ returnTo })}`);
@@ -37,7 +33,7 @@ export async function action({ request }: Route.ActionArgs) {
   session.set("expiresAt", 0); // devtoken は期限管理しない
   session.set("subject", subject);
   session.set("aal", aal);
-  return redirect(safeReturnTo(String(form.get("returnTo"))), {
+  return redirect(safeReturnTo(String(form.get("returnTo")), request.url), {
     headers: { "Set-Cookie": await sessionStorage.commitSession(session) },
   });
 }

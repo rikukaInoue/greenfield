@@ -2,6 +2,7 @@ import { data, redirect } from "react-router";
 import type { Route } from "./+types/auth.callback";
 import { env } from "../.server/env";
 import { claims, exchangeCode, type AuthRequest } from "../.server/oidc";
+import { safeReturnTo } from "../.server/returnto";
 import { oidcFlowStorage, sessionStorage } from "../.server/session";
 
 // loader は Keycloak からの戻り。code をトークンへ交換し、サーバー側セッションに保存する。
@@ -50,5 +51,5 @@ export async function loader({ request }: Route.LoaderArgs) {
   const headers = new Headers();
   headers.append("Set-Cookie", await sessionStorage.commitSession(session));
   headers.append("Set-Cookie", await oidcFlowStorage.destroySession(flow));
-  return redirect(req.returnTo, { headers });
+  return redirect(safeReturnTo(req.returnTo, url), { headers });
 }
