@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -122,6 +123,17 @@ func (tr *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// トレース伝播: 受信リクエストの Correlation があれば traceparent で運ぶ
 	if c, ok := middleware.FromContext(clone.Context()); ok && c.TraceID != "" {
 		clone.Header.Set("traceparent", "00-"+c.TraceID+"-"+c.SpanID+"-01")
+	}
+
+	// デッドライン伝播(#268): 呼び出し元の残り時間を下流へ渡す。下流はこれと自分の
+	// 上限の小さい方で動く(core/middleware.Deadline)。残りが尽きていれば送らずに失敗する
+	// ——誰も待っていない仕事を下流に始めさせない。
+	if dl, ok := clone.Context().Deadline(); ok {
+		left := time.Until(dl)
+		if left <= 0 {
+			return nil, context.DeadlineExceeded
+		}
+		clone.Header.Set(middleware.HeaderRequestTimeout, strconv.FormatInt(left.Milliseconds(), 10))
 	}
 	return tr.base.RoundTrip(clone)
 }
