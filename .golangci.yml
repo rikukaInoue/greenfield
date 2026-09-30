@@ -7,6 +7,30 @@ linters:
   default: none
   enable:
     - depguard
+    - gosec
+
+  # gosec（#188）は誤検知が出る前提で、ルール単位で理由を書いて除外する（ADR 0021 の
+  # 差分運用の静的解析版）。初回導入時の全80件の仕分けは verification-log 2026-09-30 参照。
+  # ここに無いルールの新規検出は落ちる。
+  exclusions:
+    rules:
+      # G104(未処理エラー)は defer Close 等の慣用句に29件出る。エラー処理の規律は
+      # レビューで見る(全数エラー化は書き味を壊す)。個別に直したい箇所は直してよい
+      - linters: [gosec]
+        text: "G104:"
+      # G115(整数変換のオーバーフロー)は ID の uint64↔int64 変換等で23件。
+      # 攻撃者が制御し得る値の変換だけ個別レビューで見る
+      - linters: [gosec]
+        text: "G115:"
+      # dev/ は開発ツール(CI とローカル専用)。パス・引数・宛先は開発者自身の入力で、
+      # パストラバーサル/SSRF/サブプロセス起動はツールの仕様そのもの
+      - path: dev/
+        linters: [gosec]
+        text: "G(201|204|301|302|304|306|702|703|704):"
+      # テレメトリのバックグラウンド送信はリクエストより長生きする設計(意図的)
+      - path: telemetry/
+        linters: [gosec]
+        text: "G118:"
 
   settings:
     depguard:
