@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
@@ -490,8 +491,27 @@ var tracerProvider trace.TracerProvider = noop.NewTracerProvider()
 
 // openDB は計測ドライバ(otelsql。DB span)で開き、プール設定(10.5)を適用する。
 // トレース無効時は span が no-op になるだけで挙動は変わらない。
+// withCallTimeouts は DSN にクエリ単位の読み書き締め切りを補う(10.5 / #219 実測)。
+// フェイルオーバーの瞬間、確立済みコネクションはエラーでなく**凍結**する(TCP が
+// ブラックホール化し、MySQL の read timeout は既定で無限。プローブが10分以上ハング
+// した)。ConnMaxLifetime は返却時にしか判定されないので凍結を救えない——
+// クエリ自体の締め切りでしか回収できない。DSN 側に明示があればそちらを尊重する。
+func withCallTimeouts(dsn string) string {
+	for _, p := range []string{"readTimeout=10s", "writeTimeout=10s"} {
+		if strings.Contains(dsn, strings.SplitN(p, "=", 2)[0]+"=") {
+			continue
+		}
+		if strings.Contains(dsn, "?") {
+			dsn += "&" + p
+		} else {
+			dsn += "?" + p
+		}
+	}
+	return dsn
+}
+
 func openDB(dsn string) (*sql.DB, error) {
-	db, err := otelsql.Open("mysql", dsn,
+	db, err := otelsql.Open("mysql", withCallTimeouts(dsn),
 		otelsql.WithTracerProvider(tracerProvider),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{OmitConnResetSession: true, OmitConnPrepare: true, OmitRows: true}))
 	if err != nil {

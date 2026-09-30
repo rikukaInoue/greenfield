@@ -106,8 +106,10 @@ OTel SDK は `telemetry` に置き、**core には入れない**（`core/middlew
 | サーバ Idle | **65s（ALB より長く）** | 短いと LB が使い回す接続をサーバが先に閉じ、断続的な 502 になる |
 | 内部 HTTP クライアント | 10s（トークン取得は 5s） | `core/httpclient`。サーバ Write 30s の内側に収まる |
 | DB（DDL） | lock_wait_timeout 5s + リトライ3回 | migrate 側が fail fast する（check #19、internal-05） |
+| DB（クエリ） | DSN readTimeout/writeTimeout 10s | 凍結コネクションの回収（#219 実測。下記プール節） |
+| migrate ジョブ全体 | ジョブレベルの締め切り + 再実行 | DDL 中のフェイルオーバーはエラーでなくハング。中断後のテーブルは atomic DDL で無傷、再実行で完走（#219 実測） |
 
-**接続プール**は `configureDB`（各サービスの合成ルート）で必ず設定する。既定 MaxOpen/MaxIdle 25・ConnMaxLifetime 300s（フェイルオーバー後に古い宛先の接続を持ち続けない）。本番値は逆算で決める: **MaxOpenConns × タスク数 × プロセス内の DB 接続数 < DB の max_connections**。Go の既定は無制限で、負荷時に max_connections を食い潰すまで観測に出ない（プール使用率メトリクスだけあって設定が無い「観測が実装より先行」の状態を #215 で解消）。
+**接続プール**は `configureDB`（各サービスの合成ルート）で必ず設定する。既定 MaxOpen/MaxIdle 25・ConnMaxLifetime 300s（フェイルオーバー後に古い宛先の接続を持ち続けない）。**DSN には `readTimeout=10s&writeTimeout=10s` も必ず付ける**——フェイルオーバーの瞬間、確立済みコネクションはエラーでなく**凍結**する（TCP がブラックホール化し、MySQL の read timeout は既定で無限。#219 の実測ではプローブが10分以上ハングした）。ConnMaxLifetime は返却時にしか判定されないので、ハング中の接続を救えない。凍結はクエリ自体の締め切りでしか回収できない。本番値は逆算で決める: **MaxOpenConns × タスク数 × プロセス内の DB 接続数 < DB の max_connections**。Go の既定は無制限で、負荷時に max_connections を食い潰すまで観測に出ない（プール使用率メトリクスだけあって設定が無い「観測が実装より先行」の状態を #215 で解消）。
 
 **リトライの線引き**。自動リトライしてよいのは（a）GET / HEAD、（b）冪等キーを持つコマンド（`Idempotency-Key`、紐付けキー）だけ。ただし `core/httpclient` に自動リトライは**入れない**——再試行の受け皿は relay（バックオフ持ち）と回収ジョブ（pending の照会・確定）に寄せてあり、リクエストの中で粘るより「1回で返して pending に劣化させる」が既定形。実測: 依存先（gear）が 20 秒黙る状態で投稿は **201・応答 10.1 秒で頭打ち**（クライアントタイムアウトが効き、依存先の遅さを引き継がない）、紐付けは pending に留まり回収ジョブが引き継ぐ。劣化であって欠損ではない。
 
