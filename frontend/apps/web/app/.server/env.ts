@@ -35,6 +35,9 @@ export const env = {
   photoApiUrl: required("PHOTO_API_URL", "http://localhost:8080"),
   gearApiUrl: required("GEAR_API_URL", "http://localhost:8090"),
   sessionSecret: required("SESSION_SECRET", "dev-session-secret"),
+  // 画像ストレージの origin。CSP の img-src / connect-src に載る（security.ts）。
+  // 署名付き URL の飛び先なので、photo API ではなくストレージ側の origin
+  imageOrigin: required("IMAGE_ORIGIN", "http://localhost:9000"),
   secureCookie: process.env.SECURE_COOKIE === "true",
   // sessionDir はサーバー側セッションストアの置き場。トークンは Cookie ではなくここに置く（#17）。
   sessionDir: process.env.SESSION_DIR ?? ".data/sessions",
