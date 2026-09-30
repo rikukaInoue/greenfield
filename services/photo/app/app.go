@@ -353,14 +353,14 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			return float64(n)
 		})
-		// メトリクスは**排水の間も**見えていてほしい(停止中の観測が消えると、
-		// 排水の失敗がどこにも出ない)。リスナーの排水後に止める
+		// メトリクスは**停止処理の間も**見えていてほしい(停止中の観測が消えると、
+		// 停止の失敗がどこにも出ない)。リスナーの停止後に止める
 		metricsCtx, stopMetrics := context.WithCancel(context.WithoutCancel(ctx))
 		defer stopMetrics()
 		reg.Serve(metricsCtx, cfg.MetricsAddr)
 	}
 	err = RunWith(ctx, cfg, deps)
-	// 排水の一部: 未送信の span を吐き切ってから戻る(10.8 と同じ思想)
+	// graceful shutdown の一部: 未送信の span を吐き切ってから戻る(10.8 と同じ思想)
 	fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer fcancel()
 	_ = tracer.Shutdown(fctx)
@@ -421,10 +421,10 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 	case cause = <-errc:
 	}
 
-	// 排水(10.8): 新規受付を止め、処理中のリクエストを待つ。順序は
+	// graceful shutdown(10.8): 新規受付を止め、処理中のリクエストを待つ。順序は
 	// **リスナー → DB** (処理中のクエリを道連れにしない)。上限は ECS の
 	// stopTimeout(既定30秒)から SIGKILL までの猶予に収まる 25 秒を既定にする。
-	// 排水しきれなかった = 処理中の接続を切った、は黙らせず警告に出す。
+	// 完了できなかった = 処理中の接続を切った、は黙らせず警告に出す。
 	start := time.Now()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(),
 		time.Duration(envIntOr("SHUTDOWN_TIMEOUT_SECONDS", 25))*time.Second)
@@ -433,14 +433,14 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 	for _, s := range servers {
 		if err := s.Shutdown(shutdownCtx); err != nil {
 			clean = false
-			slog.Warn("排水しきれなかった(処理中のリクエストが切断された可能性)",
+			slog.Warn("処理中のリクエストを完了できなかった(切断された可能性)",
 				"server.address", s.Addr, "error", err)
 		}
 	}
 	if deps.DB != nil {
 		_ = deps.DB.Close()
 	}
-	slog.Info("排水完了", "duration", time.Since(start).String(), "clean", clean)
+	slog.Info("graceful shutdown 完了", "duration", time.Since(start).String(), "clean", clean)
 	return cause
 }
 

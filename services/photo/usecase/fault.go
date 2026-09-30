@@ -34,7 +34,7 @@ type EnvFaults struct{}
 
 // Inject は PHOTO_FAULT が point と一致すればエラーを返す。
 // `<point>=<duration>`(例: before_commit=3s)の形なら、失敗でなく**遅延**を注入する。
-// 排水(10.8)のドリルで「処理中のリクエスト」を意図的に作るために使う。
+// graceful shutdown(10.8)のドリルで「処理中のリクエスト」を意図的に作るために使う。
 func (EnvFaults) Inject(point string) error {
 	v := os.Getenv("PHOTO_FAULT")
 	if v == point {
