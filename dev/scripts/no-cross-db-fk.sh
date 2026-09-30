@@ -20,6 +20,13 @@
 #   dev/scripts/no-cross-db-fk.sh photo gear  # この database が全部ある状態で検査する
 #   MYSQL_CONTAINER=... MYSQL_PORT=...        # schema-dump.sh と同じ流儀で接続先を差せる
 #
+# モード（FK_CHECK_MODE、既定 enforce）:
+#   enforce: 跨ぐ FK が 1 本でもあれば失敗する。グリーンフィールドの規律（既定）
+#   warn:    失敗させず**棚卸しを出す**。モノリスからの移行途中に「あとどのペアの FK が
+#            切れれば独立デプロイできるか」をシグナルするためのモード（#197）。
+#            FK_BASELINE=<file> を渡すと git 管理のベースラインと突き合わせ、
+#            **増加（逆行）だけを失敗**にする。減少は進捗として報告する
+#
 # **検査対象の database 名を必ず渡す。** 跨ぐ FK は定義上 2 つ以上の database が要るので、
 # 1 つしか無い DB に対して実行すると「跨ぐ FK は無い」が必ず返る。最初はこれをモジュール毎の
 # CI ジョブ（MODULES で 1 サービスに絞られる）に置いてしまい、**構造的に何も検出できない検査**
@@ -78,8 +85,48 @@ rows=$(mysql_root -N -B -e "
     AND table_schema <> referenced_table_schema
   ORDER BY table_schema, table_name;")
 
+mode=${FK_CHECK_MODE:-enforce}
+case "$mode" in enforce|warn) ;; *) echo "NG: FK_CHECK_MODE=${mode}（enforce か warn）" >&2; exit 2 ;; esac
+
 if [ -z "$rows" ]; then
-  echo "database を跨ぐ外部キーは無い（見た database: ${want[*]}）"
+  echo "database を跨ぐ外部キーは無い（見た database: ${want[*]}、モード: ${mode}）"
+  if [ "$mode" = warn ] && [ -n "${FK_BASELINE:-}" ] && [ -s "$FK_BASELINE" ]; then
+    echo "進捗: ベースラインの跨ぎ FK は全て解消済み。ベースラインを空にして enforce へ移行できる"
+  fi
+  exit 0
+fi
+
+if [ "$mode" = warn ]; then
+  # 棚卸し: サービスペアごとに集計し、「このペアが 0 になれば独立」を出す
+  echo "database を跨ぐ外部キーの棚卸し（警告モード。見た database: ${want[*]}）:"
+  echo
+  echo "$rows"
+  echo
+  echo "ペア別（この本数が 0 になれば、そのペア間は独立デプロイ可能）:"
+  echo "$rows" | awk -F'[. ]' '{ pairs[$1 " -> " $4]++ } END { for (p in pairs) printf "  %-24s 残り %d 本\n", p, pairs[p] }' | sort
+  if [ -n "${FK_BASELINE:-}" ]; then
+    if [ ! -f "$FK_BASELINE" ]; then
+      echo "NG: FK_BASELINE=$FK_BASELINE が無い。現状を固定するには:" >&2
+      echo "  FK_CHECK_MODE=warn $0 ${want[*]} | grep ' -> ' > $FK_BASELINE" >&2
+      exit 1
+    fi
+    new=$(comm -13 <(sort "$FK_BASELINE") <(echo "$rows" | sort))
+    gone=$(comm -23 <(sort "$FK_BASELINE") <(echo "$rows" | sort))
+    if [ -n "$gone" ]; then
+      echo
+      echo "進捗: ベースラインから減った FK（ベースラインの更新を推奨）:"
+      echo "$gone"
+    fi
+    if [ -n "$new" ]; then
+      cat >&2 <<MSG
+
+NG: ベースラインに無い跨ぎ FK が**増えている**（移行の逆行）:
+
+$new
+MSG
+      exit 1
+    fi
+  fi
   exit 0
 fi
 
@@ -94,5 +141,6 @@ $rows
 直し方: 他ドメインのテーブルを参照せず、**ID を値として持つ**。
 存在保証が要るなら <name>-client 経由の HTTP か ReplicaView で解決し、
 即時の整合が要るなら pending 状態 + 同期コマンド + 冪等キー（internal-03）にする。
+移行途中のコードベースで進捗を測るには FK_CHECK_MODE=warn（ヘッダのコメント参照）。
 MSG
 exit 1
