@@ -300,6 +300,10 @@ run = "dev/scripts/authn-check.sh"
 description = "ステップアップ認証のE2E(check #12 / 5.3)。aal1で削除→RFC9470チャレンジ→TOTPのみで昇格→成功"
 run = "dev/scripts/stepup-check.sh"
 
+[tasks."mcp:hitl"]
+description = "MCPエージェントのhuman-in-the-loop強制のE2E(check #14 / 5.4)。ツール呼び出しが401で止まり人間の再認証後のみ成功、監査にclient_id"
+run = "dev/scripts/mcp-hitl-check.sh"
+
 [tasks."authz:sweep"]
 description = "認可の総当たり（#182）。全リスナーの全ルートへ他人のトークンと無認証で当て、拒否の形以外を落とす。前提: 稼働中のスタック（mise run run など）"
 run = "go run ./dev/authsweep"

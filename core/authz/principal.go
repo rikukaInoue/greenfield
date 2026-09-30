@@ -16,12 +16,16 @@ const (
 // Principal は認証済み主体。ハンドラと usecase は PrincipalFrom でのみ参照する。
 type Principal struct {
 	// Subject は OP の identity ID。不透明な識別子として扱い、解析や別の値の代入をしない。
-	Subject  string
-	Kind     PrincipalKind
+	Subject string
+	Kind    PrincipalKind
+	// ClientID は純 M2M(client_credentials)トークンにだけ載る client_id クレーム。
 	ClientID string
-	Scopes   []string
-	AAL      AAL
-	AuthTime time.Time
+	// AuthorizedParty はトークンを取得したクライアントアプリ(azp)。人間の対話トークンにも
+	// 載るため、「どのアプリ/エージェントが叩いたか」の監査に使う(#14)。
+	AuthorizedParty string
+	Scopes          []string
+	AAL             AAL
+	AuthTime        time.Time
 }
 
 type principalKey struct{}
