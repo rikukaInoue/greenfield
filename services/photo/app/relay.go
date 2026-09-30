@@ -45,6 +45,7 @@ func newRelay(ctx context.Context, cfg RelayConfig) (*consistency.Relay, *sql.DB
 	if err != nil {
 		return nil, nil, fmt.Errorf("photo db: %w", err)
 	}
+	db = configureDB(db)
 	// AWS_ENDPOINT_URL（LocalStack）・認証情報は SDK の既定解決に任せる（blobstore と同じ流儀）
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {

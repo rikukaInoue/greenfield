@@ -157,12 +157,14 @@ func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, fmt.Errorf("localauthz store: %w", err)
 	}
+	authzDB = configureDB(authzDB)
 	store := localauthz.New(authzDB, actionRelations)
 
 	db, err := sql.Open("mysql", cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("photo db: %w", err)
 	}
+	db = configureDB(db)
 	images, err := blobstore.NewS3Store(ctx, cfg.Images)
 	if err != nil {
 		return nil, err
@@ -211,6 +213,7 @@ func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
 	if err != nil {
 		return nil, fmt.Errorf("photo db: %w", err)
 	}
+	db = configureDB(db)
 	images, err := blobstore.NewS3Store(ctx, cfg.Images)
 	if err != nil {
 		return nil, err
@@ -358,10 +361,23 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 		}
 	}
 
+	// サーバ側タイムアウト(10.5)。既定の Go は全部無制限で、遅いクライアントが
+	// 接続とゴルーチンを握り続けられる。ReadHeader はスローロリス対策、Write は
+	// ハンドラ実行時間の上限(内部呼び出しの合計をこれ未満に収める)、Idle は
+	// **ALB の idle timeout(60s)より長く**する——短いと LB が使い回そうとした接続を
+	// サーバが先に閉じ、断続的な 502 になる。
+	newServer := func(addr string, h http.Handler) *http.Server {
+		return &http.Server{Addr: addr, Handler: h,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       65 * time.Second,
+		}
+	}
 	servers := []*http.Server{
-		{Addr: cfg.ExternalAddr, Handler: apis[httpapi.External].Handler},
-		{Addr: cfg.InternalAddr, Handler: apis[httpapi.Internal].Handler},
-		{Addr: cfg.AdminAddr, Handler: apis[httpapi.Admin].Handler},
+		newServer(cfg.ExternalAddr, apis[httpapi.External].Handler),
+		newServer(cfg.InternalAddr, apis[httpapi.Internal].Handler),
+		newServer(cfg.AdminAddr, apis[httpapi.Admin].Handler),
 	}
 
 	errc := make(chan error, len(servers))
@@ -434,6 +450,20 @@ func imageConfigFromEnv() blobstore.Config {
 		cfg.AccessKeyID, cfg.SecretAccessKey = "test", "testtest"
 	}
 	return cfg
+}
+
+// configureDB は接続プールの上限と寿命を設定する(10.5)。
+//
+// 既定の Go は MaxOpenConns 無制限で、負荷時に接続が積み上がって DB 側の
+// max_connections を食い潰す(プール使用率のメトリクスはあるのに設定が無い、
+// という「観測が実装より先行」の状態を #215 で解消)。本番値は逆算で決める:
+// MaxOpenConns × タスク数 × プロセス内の DB 接続数 < max_connections。
+// ConnMaxLifetime はフェイルオーバー後の宛先切替を保証する(古い接続を持ち続けない)。
+func configureDB(db *sql.DB) *sql.DB {
+	db.SetMaxOpenConns(envIntOr("DB_MAX_OPEN_CONNS", 25))
+	db.SetMaxIdleConns(envIntOr("DB_MAX_IDLE_CONNS", 25))
+	db.SetConnMaxLifetime(time.Duration(envIntOr("DB_CONN_MAX_LIFETIME_SECONDS", 300)) * time.Second)
+	return db
 }
 
 func envIntOr(key string, def int) int {
