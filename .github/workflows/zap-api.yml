@@ -77,6 +77,9 @@ jobs:
 
       - name: OpenAPI を食わせて active scan（photo external v2）
         run: |
+          # ZAP コンテナは zap ユーザーで動き、bind mount した .zap へ HTML レポートを
+          # 書けない(初回実行で Errno 13。スキャン自体は全 PASS だった)。書けるようにしておく
+          chmod a+w .zap
           TOKEN=$(go run ./dev/devtoken --user alice)
           docker run --rm --network host \
             -v "$PWD/api:/zap/wrk/api:ro" -v "$PWD/.zap:/zap/wrk/.zap:rw" \
