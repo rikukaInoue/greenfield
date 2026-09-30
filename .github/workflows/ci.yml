@@ -118,6 +118,12 @@ jobs:
       - name: fmt / build / vet / test / lint / 生成物の一致
         run: mise run --quiet check
 
+      # 依存の CVE を到達性つきで検査する（#180）。matrix でモジュールに絞られるので
+      # このジョブでは変更のあったモジュールだけを見る。全モジュールの定期検査は
+      # security.yml が担当する（コードが変わらなくても CVE は増える）。
+      - name: 依存の CVE（govulncheck）
+        run: mise run --quiet vuln
+
   # database を跨ぐ外部キーを止める(#136)。跨ぐと親の DDL が子のメタデータロックを取り、
   # **他サービスのデプロイが ERROR 1205 で落ちる**（通常の読み書きは通るので日常では気づけない）。
   #

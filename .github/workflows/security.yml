@@ -1,0 +1,38 @@
+# 継続的脆弱性検査のうち、「コードが変わらなくても結果が変わる」ものを定期実行する（#194）。
+#
+# PR ごとの検査は ci.yml の go ジョブに入っている（matrix で変更されたモジュールだけ）。
+# こちらが要るのは、**脆弱性データベースが増えるから**である。依存も Go のバージョンも
+# 1バイトも変わっていないのに、明日には affected になる。差分検出では拾えない。
+name: Security
+
+on:
+  schedule:
+    # 毎日 05:17 JST。分をずらしてあるのは GitHub 側の毎時0分の混雑を避けるため
+    - cron: "17 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # 未設定は本番として扱われ、開発用の実装が組み立てられない（docs/adr/0016）
+  ENV: ci
+
+jobs:
+  govulncheck:
+    name: govulncheck（全モジュール）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # MODULES を渡さないので go.work の全モジュールが対象になる。
+      # mysql: false — 依存グラフの解析だけで DB には触らない
+      - uses: ./.github/actions/prepare
+        with:
+          cache-key: vuln
+          mysql: "false"
+
+      # govulncheck は Go の toolchain 自体の CVE も報告する。
+      # その場合は依存ではなく mise.toml の go を上げることになる
+      - name: 依存と toolchain の CVE
+        run: mise run vuln
