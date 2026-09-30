@@ -105,7 +105,9 @@ export async function unwrap<T>(p: Promise<Result<T>>): Promise<T> {
 export function parseBearerChallenge(header: string | null): Record<string, string> {
   const params: Record<string, string> = {};
   if (!header || !/^bearer\b/i.test(header)) return params;
-  for (const m of header.slice(6).matchAll(/([\w-]+)\s*=\s*(?:"([^"]*)"|([^\s,]+))/g)) {
+  // 長さを絞るのは ReDoS 対策（CodeQL js/polynomial-redos）。ヘッダは自分の API 由来だが、
+  // プロキシ越しでは信用しない。正規の auth-param がこの長さを超えることはない
+  for (const m of header.slice(6, 1030).matchAll(/([\w-]+)\s*=\s*(?:"([^"]*)"|([^\s,]+))/g)) {
     params[m[1]] = m[2] ?? m[3];
   }
   return params;

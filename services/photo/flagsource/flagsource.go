@@ -114,6 +114,11 @@ func newProvider(cfg Config) (openfeature.FeatureProvider, error) {
 		}
 		return flagd.NewProvider(flagd.WithFileResolver(), flagd.WithOfflineFilePath(cfg.Path))
 	case Sync, "":
+		// FLAGD_PORT は環境変数由来。範囲外を黙って uint16 に折り返すと
+		// 別ポートへ繋ぎに行って失敗の原因が消える
+		if cfg.Port < 1 || cfg.Port > 65535 {
+			return nil, fmt.Errorf("flagsource: FLAGD_PORT が範囲外: %d", cfg.Port)
+		}
 		return flagd.NewProvider(
 			flagd.WithInProcessResolver(),
 			flagd.WithHost(cfg.Host),
