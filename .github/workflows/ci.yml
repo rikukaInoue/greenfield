@@ -176,6 +176,22 @@ jobs:
           API_BASE_REF: origin/${{ github.base_ref }}
         run: mise run --quiet api:breaking
 
+  # 設定（Dockerfile / compose / Terraform）とシークレットの検査（#187）。
+  # 依存 CVE は go ジョブ（govulncheck）と frontend ジョブ（osv-scanner）の担当なので
+  # スキャナを絞る。変更判定に依らず毎回回す——対象がリポジトリ全域で affected の語彙の外
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: 設定・シークレット（canary で検出器の生存確認つき）
+        run: mise run --quiet trivy:check
+
   keycloak:
     needs: changes
     if: needs.changes.outputs.keycloak == 'true'
@@ -542,7 +558,7 @@ jobs:
   # ブランチ保護の必須チェックはこのジョブだけを指定すればよい（対象外のジョブがスキップでも通る）。
   check:
     if: always()
-    needs: [changes, go, cross-db-fk, api-breaking, frontend, keycloak]
+    needs: [changes, go, cross-db-fk, api-breaking, frontend, keycloak, trivy]
     runs-on: ubuntu-latest
     steps:
       - name: 結果をまとめる

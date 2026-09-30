@@ -6,6 +6,7 @@ sqlc = "1.31.1"
 "ubi:oasdiff/oasdiff" = "1.32.1"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.8.0"
 "osv-scanner" = "2.6.0"
+trivy = "0.74.0"
 node = "24.21.0"
 pnpm = "12.6.0"
 
@@ -144,6 +145,14 @@ run = "dev/scripts/client-gen.sh --check"
 [tasks."api:breaking:test"]
 description = "API のバージョニング規則（api:breaking）が違反を正しく落とすか検査する"
 run = "dev/scripts/api-breaking.test.sh"
+
+[tasks."trivy:check"]
+description = "Trivy で設定（Dockerfile/compose/Terraform）とシークレットを検査（#187）。除外は .trivyignore.yaml（理由+期限必須、期限切れは自動で再検出）"
+run = "dev/scripts/trivy-check.sh"
+
+[tasks."trivy:image"]
+description = "trivy:check に加えてイメージ3本をビルドして OS パッケージ CVE を検査（日次。security.yml）"
+run = "dev/scripts/trivy-check.sh image"
 
 [tasks."web:vuln"]
 description = "frontend 依存の既知脆弱性（#183）。osv-scanner + pnpm audit --prod を差分運用（ADR 0021）で"

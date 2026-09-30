@@ -1,0 +1,75 @@
+# Trivy の除外（#187 / ADR 0021: 差分運用）。
+# 除外には statement（理由）と expired_at（期限）を必ず書く。trivy は expired_at を過ぎた
+# 除外を自動で無効化するので、期限切れ = ゲートが再び落ちる（放置の検出が機構に入っている）。
+# 理由は「なぜ今直さないか」と「どこで直すか（issue）」を書く。
+
+misconfigurations:
+  # 非 root 化は gap-4（#213）で対応する。Dockerfile 3 本まとめて USER を入れる話で、
+  # read-only rootfs とセットで設計するためここでは除外
+  - id: DS-0002
+    paths:
+      - services/photo/Dockerfile
+      - services/gear/Dockerfile
+      - platform/authz/Dockerfile
+    statement: "non-root 化は #213 で対応"
+    expired_at: 2026-11-30
+
+  # infra/ は Phase 7 の使い捨て検証スタック（検証のたびに apply → destroy、常時稼働なし）。
+  # 検出は既知の gap 群と同根: 暗号化 #212 / TLS #211 / シークレット #210 / ログ・SG 等。
+  # 恒久スタック化の際に gap issue 側で潰し、この除外は外す
+  - id: AWS-0030
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0031
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0052
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0053
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0054
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0079
+    paths: ["infra/**"]
+    statement: "保存時暗号化は #212 で既定化する。検証スタックでは未設定"
+    expired_at: 2026-12-31
+  - id: AWS-0080
+    paths: ["infra/**"]
+    statement: "保存時暗号化は #212 で既定化する。検証スタックでは未設定"
+    expired_at: 2026-12-31
+  - id: AWS-0086
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0087
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0091
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0093
+    paths: ["infra/**"]
+    statement: "使い捨て検証スタック。恒久化時に gap(#210-#213)で対応"
+    expired_at: 2026-12-31
+  - id: AWS-0104
+    paths: ["infra/**"]
+    statement: "SG の広い egress。使い捨て検証スタック。恒久化時に見直す(#210-#213)"
+    expired_at: 2026-12-31
+  - id: AWS-0132
+    paths: ["infra/**"]
+    statement: "保存時暗号化(CMK)は #212 で既定化する"
+    expired_at: 2026-12-31
+  - id: AWS-0164
+    paths: ["infra/**"]
+    statement: "パブリックサブネット関連。使い捨て検証スタックの構成(#211 で TLS 化と合わせ見直す)"
+    expired_at: 2026-12-31
