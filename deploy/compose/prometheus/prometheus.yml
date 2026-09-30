@@ -2,6 +2,12 @@
 # サービスが起動していないターゲットは down と出るだけで害はない(tier2 の authz 等)。
 global:
   scrape_interval: 5s
+  evaluation_interval: 15s
+
+# 常設アラート(#224)。各ルールは docs/runbooks/ の手順と対で、
+# ルール自体の発火条件は promtool の単体テスト(alerts_test.yml)で機械検証する
+rule_files:
+  - /etc/prometheus/alerts.yml
 
 scrape_configs:
   - job_name: photo

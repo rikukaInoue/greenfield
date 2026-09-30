@@ -1,0 +1,45 @@
+# 常設アラートルール(#224)。「Error = 人が動く」に対応する4本だけ持つ。
+# 増やすときは docs/runbooks/ の手順・alerts_test.yml のルール単体テストを必ず対で足す
+# (手順の無いアラートは無視される訓練にしかならず、テストの無いルールは fail open する)。
+groups:
+  - name: greenfield
+    rules:
+      - alert: DBPoolSaturated
+        # in_use/max が高止まり = 接続の飽和。逆算式(10.5)の前提が破れている
+        expr: db_pool_in_use / db_pool_max > 0.8
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "DB 接続プールが飽和に近い({{ $labels.service }})"
+          runbook: docs/runbooks/db-pool-saturated.md
+      - alert: AuthzLatencyHigh
+        # 認可の往復が遅い = 全リクエストの前段が遅い
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="authz"}[5m]))) > 0.1
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "authz の p95 が 100ms を超えている"
+          runbook: docs/runbooks/authz-latency-high.md
+      - alert: OutboxStalled
+        # relay が止まっている/追いつかない。0 より大きい値の持続でなく「最古の滞留秒」で見る
+        expr: outbox_oldest_age_seconds > 60
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "outbox の最古イベントが {{ $value }} 秒滞留(relay 停止か過負荷)"
+          runbook: docs/runbooks/outbox-stalled.md
+      - alert: MetricUnreadable
+        # -1 = 観測不能(telemetry の規約)。0 と混同しないための値が実際に出た状態
+        expr: outbox_pending < 0 or outbox_oldest_age_seconds < 0 or contract_pending < 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "SQL 由来の gauge が観測不能(-1)を返している({{ $labels.service }})"
+          runbook: docs/runbooks/metric-unreadable.md
+      - alert: ContractQueueRotting
+        # contract の消化忘れ(#200)。日単位の腐敗検知なので severity は ticket
+        expr: min_over_time(contract_pending[3d]) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "未適用の contract が3日以上残っている({{ $labels.service }})"
+          runbook: docs/runbooks/contract-queue-rotting.md

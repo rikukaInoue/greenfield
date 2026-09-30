@@ -1,0 +1,86 @@
+# アラートルールの単体テスト(promtool test rules)。#224。
+# アラート自体の fail open 対策: 「閾値を跨ぐ系列で発火する」「跨がない系列で発火しない」の
+# 両方を機械で確かめる。ルールを足す/閾値を変えるときはここも必ず更新する(mise run lint:alerts)。
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'db_pool_in_use{service="photo"}'
+        values: "21x10"
+      - series: 'db_pool_max{service="photo"}'
+        values: "25x10"
+      - series: 'outbox_oldest_age_seconds{service="photo"}'
+        values: "0 30 90 150 210 270 330 390 450 510"
+      - series: 'outbox_pending{service="photo"}'
+        values: "-1x10"
+      - series: 'contract_pending{service="photo"}'
+        values: "1x10"
+      # authz p95 > 100ms: 増分の大半を 0.25s バケットに置く
+      - series: 'http_server_request_duration_seconds_bucket{job="authz",le="0.05"}'
+        values: "0x15"
+      - series: 'http_server_request_duration_seconds_bucket{job="authz",le="0.1"}'
+        values: "0x15"
+      - series: 'http_server_request_duration_seconds_bucket{job="authz",le="0.25"}'
+        values: "0+10x15"
+      - series: 'http_server_request_duration_seconds_bucket{job="authz",le="+Inf"}'
+        values: "0+10x15"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: DBPoolSaturated
+        exp_alerts:
+          - exp_labels: { severity: page, service: photo }
+            exp_annotations:
+              summary: "DB 接続プールが飽和に近い(photo)"
+              runbook: docs/runbooks/db-pool-saturated.md
+      - eval_time: 8m
+        alertname: OutboxStalled
+        exp_alerts:
+          - exp_labels: { severity: page, service: photo }
+            exp_annotations:
+              summary: "outbox の最古イベントが 450 秒滞留(relay 停止か過負荷)"
+              runbook: docs/runbooks/outbox-stalled.md
+      - eval_time: 8m
+        alertname: MetricUnreadable
+        exp_alerts:
+          - exp_labels: { severity: page, service: photo }
+            exp_annotations:
+              summary: "SQL 由来の gauge が観測不能(-1)を返している(photo)"
+              runbook: docs/runbooks/metric-unreadable.md
+      - eval_time: 14m
+        alertname: AuthzLatencyHigh
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations:
+              summary: "authz の p95 が 100ms を超えている"
+              runbook: docs/runbooks/authz-latency-high.md
+  # 発火しない側(閾値の内側)。これが無いと「常に発火するルール」も緑に見える
+  - interval: 1m
+    input_series:
+      - series: 'db_pool_in_use{service="photo"}'
+        values: "10x10"
+      - series: 'db_pool_max{service="photo"}'
+        values: "25x10"
+      - series: 'outbox_oldest_age_seconds{service="photo"}'
+        values: "0x10"
+      - series: 'outbox_pending{service="photo"}'
+        values: "3x10"
+      - series: 'contract_pending{service="photo"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: DBPoolSaturated
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: OutboxStalled
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: MetricUnreadable
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: AuthzLatencyHigh
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: ContractQueueRotting
+        exp_alerts: []
