@@ -80,3 +80,4 @@
 - [依存 CVE の検査を到達性つきで入れる（#180 / #194）](2026-09-30-govulncheck.md)
 - [境界の引き直しドリル: gear の除却と切り出しを実測する（#206）](2026-09-30-boundary-redraw-drill.md)
 - [認可の総当たり: 全ルート × 他人のトークン / 無認証（#182）](2026-09-30-authsweep.md)
+- [React Router SSR 固有の攻撃面をテストで固定する（#186）](2026-09-30-ssr-attack-surface.md)

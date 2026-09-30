@@ -14,6 +14,7 @@ import type { Route } from "./+types/root";
 import { newTraceContext } from "@greenfield/api-core/trace";
 import { requestIdContext, traceparentContext, viewerContext } from "./context";
 import { sessionStorage } from "./.server/session";
+import { securityHeaders } from "./.server/security";
 import "./app.css";
 
 const sessionMiddleware: Route.MiddlewareFunction = async ({ request, context }, next) => {
@@ -26,7 +27,17 @@ const sessionMiddleware: Route.MiddlewareFunction = async ({ request, context },
   return next();
 };
 
-export const middleware: Route.MiddlewareFunction[] = [sessionMiddleware];
+// SSR はブラウザが実行する HTML を返すので、CSP はここで初めて意味を持つ（#186）。
+// ヘッダの中身と根拠は .server/security.ts
+const securityHeadersMiddleware: Route.MiddlewareFunction = async (_, next) => {
+  const res = await next();
+  for (const [name, value] of Object.entries(securityHeaders)) {
+    res.headers.set(name, value);
+  }
+  return res;
+};
+
+export const middleware: Route.MiddlewareFunction[] = [securityHeadersMiddleware, sessionMiddleware];
 
 export function loader({ context }: Route.LoaderArgs) {
   return { viewer: context.get(viewerContext) };
