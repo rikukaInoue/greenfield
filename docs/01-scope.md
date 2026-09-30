@@ -1,6 +1,14 @@
 # スコープ
 
-<!-- 区分: 検証ビルド / ステータス: Draft -->
+<!-- 区分: 検証ビルド / ステータス: 成功条件達成（2026-09-30） -->
+
+> **達成記録（2026-09-30）**: 下記の成功条件を満たした。Phase 0〜6 の非任意ステージを完了し、
+> 04 のチェックリストは（任意）の #12 / #14 を除く全29項目を消化（証跡は
+> `docs/verification-log/` の索引）。任意とした Phase 7（AWS、使い捨て）も 7.1〜7.5 を
+> 完了した。還流物は core 一式・scaffold・compose・FGA 最小モデル・Keycloak realm 定義
+> （`deploy/compose/keycloak/`）・GitHub Actions パイプライン・規約の修正点（fail open 7例、
+> フラグ命名の文字集合等）・マイグレーションツール比較（ADR 0020）に加え、
+> 計画時に無かった AppConfig の OpenFeature プロバイダ（`flagprovider/appconfig/`）が揃った。
 
 ## 目的
 
