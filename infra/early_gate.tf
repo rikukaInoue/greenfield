@@ -51,8 +51,14 @@ resource "aws_lb_listener_rule" "photo_test" {
 # --- 昇格ゲートのフック(Lambda) ------------------------------------------
 # TEST_TRAFFIC_SHIFT 後に呼ばれ、テストリスナー経由で green を検証する。
 # healthz だけでは PHOTO_FAULT(書き込みのみ壊れる)を素通しするので、**書き込みまで**やる。
+#
+# テスト書き込みの行き先(#199): この検証は create(201) で**止めて commit しない**。
+# 残るのは実体オブジェクトの無い pending_upload の行だけで、放置分の回収ジョブ
+# (check #28)がオブジェクトごと削除する対象に収まる。**フックを commit まで
+# 深くするとこの前提が崩れ、回収対象から外れたデータが健全なデプロイのたびに
+# 本番へ残る**。深くする場合は合成テナントへの隔離かフック自身の後片付けを設計してから。
 variable "hook_devtoken" {
-  description = "フックが書き込み検証に使う devtoken(dev/devtoken で発行)"
+  description = "フックが書き込み検証に使う devtoken。テスト起因を監査ログ・メトリクスで識別できるよう、一般ユーザーでなく専用の合成 subject(例: --user gate-hook)で発行する(#199)"
   sensitive   = true
   default     = ""
 }
@@ -107,7 +113,7 @@ data "archive_file" "gate_hook" {
 resource "aws_iam_role" "gate_hook_lambda" {
   name = "greenfield-71-gate-hook-lambda"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }]
   })
 }
@@ -137,13 +143,13 @@ resource "aws_lambda_function" "gate_hook" {
 resource "aws_iam_role" "hook_invoke" {
   name = "greenfield-71-hook-invoke"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Principal = { Service = "ecs.amazonaws.com" }, Action = "sts:AssumeRole" }]
   })
   inline_policy {
     name = "invoke-gate-hook"
     policy = jsonencode({
-      Version = "2012-10-17"
+      Version   = "2012-10-17"
       Statement = [{ Effect = "Allow", Action = "lambda:InvokeFunction", Resource = aws_lambda_function.gate_hook.arn }]
     })
   }
