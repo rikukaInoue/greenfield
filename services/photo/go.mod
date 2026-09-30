@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
+	github.com/aws/aws-sdk-go-v2/service/appconfigdata v1.32.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.2
 	github.com/aws/smithy-go v1.28.2
@@ -15,6 +16,7 @@ require (
 	github.com/open-feature/go-sdk v1.19.0
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.7.0
 	github.com/rikukaInoue/greenfield/core v0.0.0-00010101000000-000000000000
+	github.com/rikukaInoue/greenfield/flagprovider/appconfig v0.0.0-00010101000000-000000000000
 	github.com/rikukaInoue/greenfield/telemetry v0.0.0-00010101000000-000000000000
 )
 
@@ -87,6 +89,8 @@ require (
 // モジュール間の依存はタグではなくreplaceで結ぶ（リポジトリ外から消費されるまでタグは打たない）。
 // 他サービスへの依存は <name>-client のみ許可。実装モジュールをここに書いてはならない。
 replace github.com/rikukaInoue/greenfield/core => ../../core
+
+replace github.com/rikukaInoue/greenfield/flagprovider/appconfig => ../../flagprovider/appconfig
 
 replace github.com/rikukaInoue/greenfield/telemetry => ../../telemetry
 

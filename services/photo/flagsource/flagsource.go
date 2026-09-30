@@ -12,9 +12,14 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/appconfigdata"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	"github.com/open-feature/go-sdk/openfeature"
+
+	"github.com/rikukaInoue/greenfield/flagprovider/appconfig"
 )
 
 // flagd のログはアプリの slog に寄せられない（flagd v0.7.0、#142 で実測）。
@@ -44,6 +49,8 @@ const (
 	Sync Kind = "sync"
 	// File はファイルを直接読む。flagd を立てずに済むので CI とテストで使う。
 	File Kind = "file"
+	// AppConfig は AWS AppConfig から定義を同期する(docs/adr/0011)。AWS 上の既定。
+	AppConfig Kind = "appconfig"
 )
 
 // Config は取得元の設定。
@@ -54,15 +61,25 @@ type Config struct {
 	Port int
 	// Path は Kind が File のときの定義ファイル。
 	Path string
+	// Application / Environment / Profile は Kind が AppConfig のときの識別子。
+	Application string
+	Environment string
+	Profile     string
+	// PollInterval は Kind が AppConfig のときの同期間隔(AppConfig の下限 15s)。
+	PollInterval time.Duration
 }
 
 // ConfigFromEnv は環境変数から設定を読む。既定は flagd の sync service。
 func ConfigFromEnv() Config {
 	return Config{
-		Kind: Kind(envOr("FLAGS_SOURCE", string(Sync))),
-		Host: envOr("FLAGD_HOST", "localhost"),
-		Port: envIntOr("FLAGD_PORT", 8015),
-		Path: os.Getenv("FLAGS_FILE"),
+		Kind:         Kind(envOr("FLAGS_SOURCE", string(Sync))),
+		Host:         envOr("FLAGD_HOST", "localhost"),
+		Port:         envIntOr("FLAGD_PORT", 8015),
+		Path:         os.Getenv("FLAGS_FILE"),
+		Application:  os.Getenv("APPCONFIG_APPLICATION"),
+		Environment:  os.Getenv("APPCONFIG_ENVIRONMENT"),
+		Profile:      os.Getenv("APPCONFIG_PROFILE"),
+		PollInterval: time.Duration(envIntOr("FLAGS_POLL_SECONDS", 20)) * time.Second,
 	}
 }
 
@@ -79,6 +96,18 @@ func Register(ctx context.Context, domain string, cfg Config) error {
 
 func newProvider(cfg Config) (openfeature.FeatureProvider, error) {
 	switch cfg.Kind {
+	case AppConfig:
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("flagsource: AWS 設定: %w", err)
+		}
+		return appconfig.New(appconfig.Config{
+			Application:  cfg.Application,
+			Environment:  cfg.Environment,
+			Profile:      cfg.Profile,
+			PollInterval: cfg.PollInterval,
+			Client:       appconfigdata.NewFromConfig(awsCfg),
+		})
 	case File:
 		if cfg.Path == "" {
 			return nil, fmt.Errorf("flagsource: FLAGS_SOURCE=file には FLAGS_FILE が必要")

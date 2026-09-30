@@ -58,6 +58,7 @@
 - [[7.2] ECS ネイティブ B/G・カナリアで #24 / #26 を再演（#63）](2026-09-30-stage-72.md)
 - [[7.3] 実 SNS/SQS FIFO で #8 / #9 を再演（#64）](2026-09-30-stage-73.md)
 - [[7.4] Aurora MySQL の INSTANT DDL と fast clone を実測（#65）](2026-09-30-stage-74.md)
+- [[7.5] AppConfig の OpenFeature プロバイダを自作し #18/#21 を再演（#79）](2026-09-30-stage-75.md)
 
 ## 監査(2026-09-27)の修正
 

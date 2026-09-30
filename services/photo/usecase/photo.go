@@ -50,10 +50,12 @@ type PhotoRepository interface {
 // uploadTTL は署名URLの有効期限。
 const uploadTTL = 15 * time.Minute
 
-// フラグ名。`<種類>.<機能名>` の形で、種類は寿命を表す。
+// フラグ名。`<種類>_<機能名>` の形で、種類は寿命を表す。
+// 区切りが "_" なのは AWS AppConfig のキー制約(^[a-z][a-zA-Z0-9_-]{0,63}$、"." 不可)に
+// 合わせたため(7.5 実測)。マネージド基盤で使えない文字を規約に入れない。
 const (
 	// FlagDisableUploads はストレージ障害時の縮退用キルスイッチ（長期）。
-	FlagDisableUploads = "ops.photo_disable_uploads"
+	FlagDisableUploads = "ops_photo_disable_uploads"
 )
 
 // PhotoCommands は写真の更新系ユースケース。
