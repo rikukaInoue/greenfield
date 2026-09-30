@@ -59,6 +59,7 @@
 - [[7.3] 実 SNS/SQS FIFO で #8 / #9 を再演（#64）](2026-09-30-stage-73.md)
 - [[7.4] Aurora MySQL の INSTANT DDL と fast clone を実測（#65）](2026-09-30-stage-74.md)
 - [[7.5] AppConfig の OpenFeature プロバイダを自作し #18/#21 を再演（#79）](2026-09-30-stage-75.md)
+- [排水（グレースフルシャットダウン）を実装して実測（#222 / 10.8）](2026-09-30-stage-drain.md)
 
 ## 監査(2026-09-27)の修正
 

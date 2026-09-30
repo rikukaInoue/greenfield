@@ -3,6 +3,8 @@ package usecase
 import (
 	"errors"
 	"os"
+	"strings"
+	"time"
 )
 
 // 検証用の失敗注入点。
@@ -31,9 +33,17 @@ func (NoFaults) Inject(string) error { return nil }
 type EnvFaults struct{}
 
 // Inject は PHOTO_FAULT が point と一致すればエラーを返す。
+// `<point>=<duration>`(例: before_commit=3s)の形なら、失敗でなく**遅延**を注入する。
+// 排水(10.8)のドリルで「処理中のリクエスト」を意図的に作るために使う。
 func (EnvFaults) Inject(point string) error {
-	if os.Getenv("PHOTO_FAULT") == point {
+	v := os.Getenv("PHOTO_FAULT")
+	if v == point {
 		return ErrInjectedFault
+	}
+	if rest, ok := strings.CutPrefix(v, point+"="); ok {
+		if d, err := time.ParseDuration(rest); err == nil {
+			time.Sleep(d)
+		}
 	}
 	return nil
 }

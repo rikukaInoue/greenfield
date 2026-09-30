@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql" // driver は合成ルートが選ぶ
@@ -330,7 +331,11 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			return float64(n)
 		})
-		reg.Serve(ctx, cfg.MetricsAddr)
+		// メトリクスは**排水の間も**見えていてほしい(停止中の観測が消えると、
+		// 排水の失敗がどこにも出ない)。リスナーの排水後に止める
+		metricsCtx, stopMetrics := context.WithCancel(context.WithoutCancel(ctx))
+		defer stopMetrics()
+		reg.Serve(metricsCtx, cfg.MetricsAddr)
 	}
 	return RunWith(ctx, cfg, deps)
 }
@@ -376,11 +381,26 @@ func RunWith(ctx context.Context, cfg Config, deps *Deps) error {
 	case cause = <-errc:
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 排水(10.8): 新規受付を止め、処理中のリクエストを待つ。順序は
+	// **リスナー → DB** (処理中のクエリを道連れにしない)。上限は ECS の
+	// stopTimeout(既定30秒)から SIGKILL までの猶予に収まる 25 秒を既定にする。
+	// 排水しきれなかった = 処理中の接続を切った、は黙らせず警告に出す。
+	start := time.Now()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(envIntOr("SHUTDOWN_TIMEOUT_SECONDS", 25))*time.Second)
 	defer cancel()
+	clean := true
 	for _, s := range servers {
-		_ = s.Shutdown(shutdownCtx)
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			clean = false
+			slog.Warn("排水しきれなかった(処理中のリクエストが切断された可能性)",
+				"server.address", s.Addr, "error", err)
+		}
 	}
+	if deps.DB != nil {
+		_ = deps.DB.Close()
+	}
+	slog.Info("排水完了", "duration", time.Since(start).String(), "clean", clean)
 	return cause
 }
 
@@ -414,6 +434,15 @@ func imageConfigFromEnv() blobstore.Config {
 		cfg.AccessKeyID, cfg.SecretAccessKey = "test", "testtest"
 	}
 	return cfg
+}
+
+func envIntOr(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func envOr(key, def string) string {
