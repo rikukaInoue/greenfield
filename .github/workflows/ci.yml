@@ -491,6 +491,11 @@ jobs:
             echo "$url が起動しない" >&2; exit 1
           done
 
+      # 水平権限昇格は既製の検査から出ない（ZAP は 200 を正常として通す）。
+      # ルート一覧はハンドラ登録の実体から取るので、経路が増えれば対象も自動で増える
+      - name: 認可の総当たり（#182。全経路 × 他人のトークン / 無認証）
+        run: mise run --quiet authz:sweep
+
       # --- OIDC 経路（5.2）: confidential client の実 Keycloak ログインを別インスタンスで検証する ---
       - name: Keycloak / OpenFGA / authz / photo(OIDC) / SSR(OIDC) を起動する
         run: |

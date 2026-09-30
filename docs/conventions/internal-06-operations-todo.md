@@ -86,3 +86,11 @@ SQL 由来の gauge は「読めない」を **-1** で返す（0=滞留なし �
 **正常な停止は exit 0**。SIGTERM での終了を異常扱いして exit 1 にしない（ECS のタスク停止が毎回「異常終了」として記録されるのを防ぐ）。
 
 ヘルスチェックの使い分けは既存の実測どおり: `/healthz` は「生きている」しか言えず（fail open 事例3）、デプロイの成否は業務の書き込みまで通す昇格ゲートで判定する（§10.3）。排水中に `/healthz` を落として LB からの切り離しを早める最適化は、ECS では deregistration が SIGTERM に先行するため今は入れない（入れる場合は根拠の実測から）。
+
+### 10.9 依存更新と脆弱性通知の運用（確定）
+
+依存の脆弱性対応は「見つける」（govulncheck、PR ごと + 日次。#180）と「常に新しく保つ」（Dependabot weekly、`.github/dependabot.yml`。#181）の2系統で回す。gomod は全モジュールを `directories` でまとめて**1本の grouped PR** にする——片側のモジュールだけ版が上がると共有依存のドリフト（`lint:drift` が観測）になるため、同時に上げる形が構造的に正しい。major だけは group から外れて個別 PR になる。
+
+**Dependabot alerts と govulncheck の判定が食い違ったら govulncheck を採る。** alerts は依存グラフだけを見て到達性を見ないため、呼ばれないコードパスの CVE も鳴らす。その alert は「govulncheck で到達不能」と理由を書いて Dismiss する（黙って消さない——理由の無い Dismiss は次に見た人が再調査する）。逆に govulncheck だけが鳴るケース（Go toolchain 自体の CVE）は依存でなく mise.toml の go を上げる。
+
+Dependabot PR の自動マージは**まだ有効にしない**。自動マージの前提は「壊れた更新でテストが本当に落ちること」で、認可の総当たりテスト（#182）が入るまでは、検査ではなく自動デプロイの穴になる。有効化するとしても patch のみ・minor 以上は人間が読む。
