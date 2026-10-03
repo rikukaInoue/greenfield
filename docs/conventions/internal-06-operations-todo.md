@@ -37,7 +37,7 @@
 
 #### メトリクス（確定。#59 で実装）
 
-昇格シグナル3種を Prometheus 形式で公開する。計測コードは `telemetry/`（**core とは別モジュール**。core に入れると全利用者が prometheus クライアントの依存を抱える）に置き、使ってよいのは各サービスの合成ルートのみ。`/metrics` は契約・認証の面と混ぜず**専用ポート**（`METRICS_ADDR`。未設定なら出さない）。観測スタックは `mise run obs:up`（prometheus + grafana、ダッシュボード `昇格シグナル` は git 管理でレビューに載せる）。
+昇格シグナル3種を Prometheus 形式で公開する。計測コードは `telemetry/`（**core とは別モジュール**。core に入れると全利用者が prometheus クライアントの依存を抱える）に置き、使ってよいのは各サービスの合成ルートのみ。`/metrics` は契約・認証の面と混ぜず**専用ポート**（`METRICS_ADDR`。未設定なら出さない）。観測スタックは `mise run obs:up`（prometheus + tempo + loki/alloy + grafana、ダッシュボード `昇格シグナル` は git 管理でレビューに載せる）。
 
 | シグナル | メトリクス | 何の合図か |
 |---|---|---|
@@ -59,6 +59,17 @@ OTel SDK は `telemetry` に置き、**core には入れない**（`core/middlew
 - グレースフルシャットダウン（10.8）との整合: serve の停止時に `Tracer.Shutdown` で未送信 span を吐き切る
 
 実測（allinone + Tempo）: 紐付けつき投稿 1 リクエストで **25 span が 1 トレース**に載る——photo サーバ span → クライアント span → gear サーバ span（親子が正しく連鎖）+ 両サービスの SQL span（begin_tx / query / exec / commit）+ フラグ評価。検証ログ: 2026-09-30-stage-82。
+
+#### ログの集約（確定。#271）
+
+**アプリは stdout へ JSON を出すだけで、集めるのはインフラの仕事**（上の「1ストリーム1形式・1出力先」を崩さない）。AWS では ECS の awslogs が同じ役を持つ。ローカルは compose の obs プロファイルに Loki と Alloy を置く。
+
+- **Tier 1**（ホストのプロセス）: `mise run run:obs` が allinone の stdout を `.logs/allinone.log` にも書き（同時に `OTEL_EXPORTER_OTLP_ENDPOINT` を Tempo へ向ける）、Alloy がファイルを追う
+- **Tier 2**（compose のコンテナ）: Alloy が docker のログを読む（`docker.sock` は読み取り専用で渡す。ローカル観測専用）
+- **ラベルは `service_name` と `level` だけ**。`trace_id` / `span_id` / `request_id` は**構造化メタデータ**にする。ラベルにすると値ごとに系列ができて Loki の索引が爆発する
+- **トレースと双方向**: Grafana で Loki の `trace_id` から Tempo を開き、Tempo のスパンから同じ trace_id のログを引く。ログとトレースの ID が同一（上のトレースの節）なので変換は要らない
+
+実測: allinone の 1 リクエストで、同じ trace_id が Loki（構造化メタデータで絞り込み）と Tempo（スパン `GET /v1/photos`）の両方から引けた。検証ログ: 2026-10-03-log-aggregation。
 
 <!-- 10.2 は internal/05-database.md へ分離済み -->
 

@@ -1,0 +1,97 @@
+// ログを集めて Loki へ送る(#271)。
+//
+// アプリは JSON を標準出力へ出すだけ(internal-06 §10.1)。集めるのはここの仕事。
+//   - Tier 1(ホストのプロセス): `mise run allinone:obs` が標準出力を .logs/*.log にも書く。それを追う
+//   - Tier 2(compose のコンテナ): docker のログを読む
+//
+// ラベルは service_name と level だけにする。trace_id / span_id / request_id は
+// 構造化メタデータ(値ごとに系列を作らない)。Grafana はこれで Tempo と相互に飛ぶ。
+
+// --- Tier 1: ファイル ---
+local.file_match "tier1" {
+  path_targets = [{"__path__" = "/logs/*.log"}]
+}
+
+loki.source.file "tier1" {
+  targets    = local.file_match.tier1.targets
+  forward_to = [loki.process.json.receiver]
+}
+
+// --- Tier 2: compose のコンテナ ---
+discovery.docker "compose" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=greenfield"]
+  }
+}
+
+discovery.relabel "compose" {
+  targets = discovery.docker.compose.targets
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+  // JSON に service.name を出さないコンテナ(mysql 等)は compose のサービス名で引けるように。
+  // アプリの行は下の JSON の service.name で上書きされる
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+  }
+}
+
+loki.source.docker "compose" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.compose.output
+  forward_to = [loki.process.json.receiver]
+}
+
+// --- 共通: JSON を読んでラベルと構造化メタデータに振り分ける ---
+loki.process "json" {
+  stage.json {
+    expressions = {
+      time         = "time",
+      level        = "level",
+      service_name = "\"service.name\"",
+      trace_id     = "trace_id",
+      span_id      = "span_id",
+      request_id   = "request_id",
+    }
+  }
+
+  // JSON でない行(起動前のメッセージ・他のツールの出力)はそのまま通す。
+  // タイムスタンプが読めなければ取り込んだ時刻になる
+  stage.timestamp {
+    source = "time"
+    format = "RFC3339Nano"
+  }
+
+  // level の表記をそろえる(アプリの slog は INFO、他のツールは info)
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+
+  stage.labels {
+    values = {
+      level        = "",
+      service_name = "",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      trace_id   = "",
+      span_id    = "",
+      request_id = "",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
