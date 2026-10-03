@@ -1,0 +1,33 @@
+# ローカル観測用の最小 Loki(単一バイナリ・ローカルストレージ。#271)。
+# trace_id などは構造化メタデータで持つ(ラベルにすると系列数が爆発する)。
+# 構造化メタデータは schema v13 + tsdb が前提。
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /tmp/loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+
+schema_config:
+  configs:
+    - from: "2026-01-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true
+  # 開発機で古いログファイルを読み直したときに拒否されないように
+  reject_old_samples: false

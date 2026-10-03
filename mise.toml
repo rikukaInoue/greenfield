@@ -227,14 +227,14 @@ run = [
 ]
 
 [tasks."obs:up"]
-description = "昇格シグナルの観測(prometheus + grafana)を立てる。ダッシュボード: http://127.0.0.1:3001 (#59)"
+description = "観測スタック(メトリクス prometheus・トレース tempo・ログ loki + alloy・grafana)を立てる。Grafana: http://127.0.0.1:3001 (#59 / #271)"
 dir = "deploy/compose"
-run = "docker compose --profile deploy --profile obs up -d --wait prometheus grafana"
+run = "docker compose --profile deploy --profile obs up -d --wait prometheus tempo loki alloy grafana"
 
 [tasks."obs:down"]
 description = "観測スタックを落とす"
 dir = "deploy/compose"
-run = "docker compose --profile obs rm -sf prometheus grafana"
+run = "docker compose --profile obs rm -sf prometheus tempo loki alloy grafana"
 
 [tasks."tier2:up"]
 description = "Tier 2(Caddy + 本番アダプタの photo + authz)を起動(internal-07 / #55)"
@@ -360,6 +360,10 @@ run = 'for s in $(mise run services); do n=$(basename $s); echo "== $n status"; 
 [tasks.run]
 description = "全サービスを1プロセスで起動（Tier 1: photo :8080/:8081/:8082）"
 run = "go run ./dev/allinone"
+
+[tasks."run:obs"]
+description = "run を観測つきで起動: トレースを Tempo へ送り、ログを .logs/allinone.log にも書く(Alloy が Loki へ送る)。先に mise run obs:up (#271)"
+run = 'mkdir -p .logs && OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 go run ./dev/allinone 2>&1 | tee -a .logs/allinone.log'
 
 [tasks.token]
 description = "開発用の擬似トークンを発行: mise run token -- --user alice [--aal 2]"

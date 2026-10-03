@@ -10,3 +10,6 @@ api-docs/
 
 # traffic-split-drill が生成する Caddyfile
 deploy/compose/caddy/drill/
+
+# mise run allinone:obs が書く Tier 1 のログ(Alloy が Loki へ送る。#271)
+.logs/
