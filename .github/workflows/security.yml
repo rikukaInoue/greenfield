@@ -23,7 +23,7 @@ jobs:
     name: govulncheck（全モジュール）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # MODULES を渡さないので go.work の全モジュールが対象になる。
       # mysql: false — 依存グラフの解析だけで DB には触らない
@@ -41,7 +41,7 @@ jobs:
     name: frontend 依存 + Node ランタイム
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/prepare
         with:
@@ -62,9 +62,9 @@ jobs:
     name: Trivy（設定・シークレット・イメージ）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           install: true
           cache: true
