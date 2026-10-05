@@ -37,11 +37,11 @@ jobs:
       frontend: ${{ steps.affected.outputs.frontend }}
       keycloak: ${{ steps.affected.outputs.keycloak }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           install: true
           install_args: go
@@ -74,7 +74,7 @@ jobs:
       # mise のタスク（check / migrate / schema:check 等）をこのモジュールに絞る
       MODULES: ${{ matrix.module }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: MySQL が要るモジュールか判定する
         id: db
@@ -136,7 +136,7 @@ jobs:
     if: needs.changes.outputs.go != '[]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # prepare より先に投げる（go ジョブと同じ理由: mise のインストールと起動を重ねる）
       - name: MySQL を起動する
@@ -161,12 +161,12 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.go != '[]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # base と比較するため履歴が要る
           fetch-depth: 0
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           install: true
           cache: true
@@ -182,9 +182,9 @@ jobs:
   trivy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           install: true
           cache: true
@@ -197,7 +197,7 @@ jobs:
     if: needs.changes.outputs.keycloak == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # services: では command を渡せず --import-realm で起動できない（flagd と同じ制約。
       # 冒頭の env コメント参照）ため、docker run で compose と同じ形に立てる
@@ -247,7 +247,7 @@ jobs:
           --health-timeout 3s
           --health-retries 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/prepare
         with:
@@ -412,7 +412,7 @@ jobs:
       contains(fromJSON(needs.changes.outputs.go), './services/gear')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: MySQL と LocalStack を起動する
         run: |
@@ -469,7 +469,7 @@ jobs:
         ports:
           - 9000:9000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/prepare
         with:
@@ -548,7 +548,7 @@ jobs:
 
       - name: E2E のトレースを保存する
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results
           path: frontend/apps/web/test-results/

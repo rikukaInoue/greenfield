@@ -14,8 +14,8 @@ jobs:
   meta-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
       - name: 検査ツール自身の回帰テストを一括実行
         run: mise run audit:checks
       - name: 落ちたら issue を起票する
