@@ -1,6 +1,16 @@
 apiVersion: 1
 datasources:
   - name: Tempo
+    uid: tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
+    jsonData:
+      # トレース → ログ: スパンの trace_id で Loki を引く(#271)。
+      # ログの trace_id はトレースの trace_id と同じ値(telemetry/tracing.go)
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        customQuery: true
+        query: '{service_name=~".+"} | trace_id = "$${__trace.traceId}"'

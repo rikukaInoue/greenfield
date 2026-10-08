@@ -101,6 +101,34 @@ services:
       - "127.0.0.1:3200:3200" # クエリ API
       - "127.0.0.1:4318:4318" # OTLP HTTP(アプリは OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318)
 
+  loki:
+    profiles: ["obs"]
+    image: grafana/loki:3.7.8
+    container_name: greenfield-loki
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+    ports:
+      - "127.0.0.1:3100:3100" # クエリ API(logcli / curl で引く)
+
+  # ログを集めて Loki へ送る(#271)。アプリは標準出力へ出すだけで、集めるのはここ。
+  # Tier 1 はリポジトリ直下の .logs/*.log(mise run allinone:obs が書く)、
+  # Tier 2 は docker のログを読む。docker.sock は読むためだけに渡す(ローカル観測専用)
+  alloy:
+    profiles: ["obs"]
+    image: grafana/alloy:v1.20.1
+    container_name: greenfield-alloy
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ../../.logs:/logs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:12345:12345" # Alloy の UI(取り込み状況の確認)
+    depends_on:
+      loki:
+        condition: service_started
+
   grafana:
     profiles: ["obs"]
     image: grafana/grafana:12.3.3
@@ -118,6 +146,8 @@ services:
       prometheus:
         condition: service_started
       tempo:
+        condition: service_started
+      loki:
         condition: service_started
 
   keycloak:
