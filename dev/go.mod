@@ -35,6 +35,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
+	github.com/rikukaInoue/greenfield/eventbus/snssqs v0.0.0 // indirect
 	github.com/rikukaInoue/greenfield/flagprovider/appconfig v0.0.0-00010101000000-000000000000 // indirect
 	github.com/rikukaInoue/greenfield/services/gear-client v0.0.0 // indirect
 	github.com/rikukaInoue/greenfield/services/photo-client v0.0.0 // indirect
@@ -126,3 +127,5 @@ replace github.com/rikukaInoue/greenfield/services/photo-client => ../services/p
 replace github.com/rikukaInoue/greenfield/telemetry => ../telemetry
 
 replace github.com/rikukaInoue/greenfield/services/gear-client => ../services/gear-client
+
+replace github.com/rikukaInoue/greenfield/eventbus/snssqs => ../eventbus/snssqs

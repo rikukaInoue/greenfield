@@ -10,6 +10,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/rikukaInoue/greenfield/core v0.0.0
+	github.com/rikukaInoue/greenfield/eventbus/snssqs v0.0.0
 	github.com/rikukaInoue/greenfield/services/photo-client v0.0.0
 	github.com/rikukaInoue/greenfield/telemetry v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/otel/trace v1.46.0
@@ -71,3 +72,5 @@ replace github.com/rikukaInoue/greenfield/core => ../../core
 replace github.com/rikukaInoue/greenfield/telemetry => ../../telemetry
 
 replace github.com/rikukaInoue/greenfield/services/photo-client => ../photo-client
+
+replace github.com/rikukaInoue/greenfield/eventbus/snssqs => ../../eventbus/snssqs

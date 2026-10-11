@@ -3,6 +3,7 @@ go 1.26.1
 use (
 	./core
 	./dev
+	./eventbus/snssqs
 	./flagprovider/appconfig
 	./platform/authz
 	./services/gear
