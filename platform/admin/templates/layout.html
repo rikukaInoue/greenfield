@@ -1,0 +1,19 @@
+{{define "layout"}}<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{template "title" .}} — greenfield admin</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<header>
+  <h1><a href="/">greenfield admin</a></h1>
+  {{with .Viewer}}<span class="who">{{.Subject}} <span class="badge">AAL{{.AAL}}</span></span>
+  <form method="post" action="/logout"><button class="link" type="submit">ログアウト</button></form>{{end}}
+</header>
+<main>
+{{template "content" .}}
+</main>
+</body>
+</html>{{end}}
