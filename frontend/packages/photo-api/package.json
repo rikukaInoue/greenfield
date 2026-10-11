@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./admin": "./src/admin.ts"
   },
   "scripts": {
-    "gen": "openapi-typescript ../../../api/photo/external.v2.openapi.json -o src/external.v2.gen.ts",
-    "gen:check": "openapi-typescript ../../../api/photo/external.v2.openapi.json -o src/external.v2.gen.ts --check",
+    "gen": "openapi-typescript ../../../api/photo/external.v2.openapi.json -o src/external.v2.gen.ts && openapi-typescript ../../../api/photo/admin.openapi.json -o src/admin.gen.ts",
+    "gen:check": "openapi-typescript ../../../api/photo/external.v2.openapi.json -o src/external.v2.gen.ts --check && openapi-typescript ../../../api/photo/admin.openapi.json -o src/admin.gen.ts --check",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
