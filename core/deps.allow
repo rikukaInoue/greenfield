@@ -1,0 +1,13 @@
+# core の direct require の許可リスト(dev/scripts/core-deps-check.sh が go.mod と突き合わせる)。
+#
+# core の依存は core を使う全モジュールに配られる(module graph・脆弱性スキャン・
+# 更新の手間が全員に乗る)。足すときは判断を ADR に残し、ここに 1 行足す(ADR 0019 の運用)。
+# 配送基盤・クラウド SDK のような差し替えうる実装は core に置かず、別モジュールにする(ADR 0022)。
+#
+# 書式: <モジュール> <runtime|test> <根拠>
+#   runtime = 本体のコードが import する(全利用者に配る)
+#   test    = _test.go だけが import する(go mod why -m の経路に .test が挟まること)
+github.com/danielgtaylor/huma/v2 runtime ADR-0019
+github.com/go-chi/chi/v5 runtime ADR-0019,ADR-0001
+github.com/open-feature/go-sdk runtime ADR-0010
+github.com/go-sql-driver/mysql test ADR-0019,ADR-0004

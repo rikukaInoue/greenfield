@@ -75,7 +75,7 @@ run = 'for m in $(mise run modules); do (cd $m && GOWORK=off go mod tidy) || exi
 
 [tasks.check]
 description = "fmt + build + vet + test + lint（queries / imports）+ sqlc:check + api:check + client:check（CI 相当。schema:check は DB が要るので別）"
-depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "lint:secure-defaults", "lint:alerts", "lint:drift", "sqlc:check", "api:check", "client:check", "api:breaking:test", "baseline:test"]
+depends = ["fmt", "build", "vet", "test", "lint:queries", "lint:imports", "lint:replaces", "lint:core-deps", "lint:secure-defaults", "lint:alerts", "lint:drift", "sqlc:check", "api:check", "client:check", "api:breaking:test", "baseline:test"]
 
 # --- sqlc とスキーマ整合 ---
 
@@ -191,6 +191,10 @@ run = "dev/scripts/secure-defaults-check.sh"
 [tasks."lint:replaces"]
 description = "モジュール間 require の replace 漏れと、Dockerfile の COPY 漏れを検査(#163)"
 run = "dev/scripts/replace-check.sh"
+
+[tasks."lint:core-deps"]
+description = "core の direct require を許可リスト(core/deps.allow)と突き合わせる(ADR 0019 / 0022、#270)"
+run = "dev/scripts/core-deps-check.sh"
 
 [tasks."lint:queries"]
 description = "クエリが自ドメインのテーブルだけを参照しているか検証（許可リスト = db/schema.sql）"
