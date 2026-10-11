@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/rikukaInoue/greenfield/core/consistency"
-	"github.com/rikukaInoue/greenfield/core/eventbus"
+	"github.com/rikukaInoue/greenfield/eventbus/snssqs"
 	"github.com/rikukaInoue/greenfield/services/gear/replicaview"
 	"github.com/rikukaInoue/greenfield/services/gear/usecase"
 )
@@ -63,7 +63,7 @@ func RunConsumer(ctx context.Context, cfg ConsumeConfig) error {
 	if err != nil {
 		return fmt.Errorf("aws config: %w", err)
 	}
-	consumer := eventbus.NewConsumer(sqs.NewFromConfig(awsCfg), cfg.QueueURL,
+	consumer := snssqs.NewConsumer(sqs.NewFromConfig(awsCfg), cfg.QueueURL,
 		func(ctx context.Context, ev consistency.Event) error {
 			applied, err := events.Process(ctx, usecase.Event{
 				ID: ev.ID, Type: ev.Type, AggregateID: ev.AggregateID, Payload: ev.Payload,

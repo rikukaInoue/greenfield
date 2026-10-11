@@ -8,6 +8,7 @@ FROM golang:1.26-alpine AS build
 WORKDIR /src
 # 依存の解決だけ先に。go.sum が変わらない限りこの層は再利用される
 COPY core/go.mod core/go.sum ./core/
+COPY eventbus/snssqs/go.mod eventbus/snssqs/go.sum ./eventbus/snssqs/
 COPY services/photo/go.mod services/photo/go.sum ./services/photo/
 COPY telemetry/go.mod telemetry/go.sum ./telemetry/
 COPY flagprovider/appconfig/go.mod flagprovider/appconfig/go.sum ./flagprovider/appconfig/
@@ -15,6 +16,7 @@ COPY services/photo-client/go.mod ./services/photo-client/
 COPY services/gear-client/go.mod ./services/gear-client/
 RUN cd services/photo && GOWORK=off go mod download
 COPY core ./core
+COPY eventbus/snssqs ./eventbus/snssqs
 COPY telemetry ./telemetry
 COPY flagprovider/appconfig ./flagprovider/appconfig
 COPY services/photo ./services/photo

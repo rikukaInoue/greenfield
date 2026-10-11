@@ -75,3 +75,14 @@ github.com/danielgtaylor/huma/v2
 足す PR には対応する ADR 番号を書く、(2) テスト専用依存の条件（`_test.go` のみ /
 `go mod why -m` で判別）、(3) ツリー図は「到達点」ではなく実物に合わせて更新し、
 未実装のエントリには注記を付ける（#138 の形式）。
+
+## 追記(2026-10-11、#270)
+
+- **表に無い direct require が入っていた**: #162 で `core/eventbus` が AWS SDK(`service/sns` / `service/sqs`)を
+  core に持ち込んだが、この ADR の運用(1)(ADR 番号を書く)が守られず、表も更新されなかった。
+  [ADR 0022](0022-delivery-implementations-outside-core.md) で実装を `eventbus/snssqs` に移し、core から外した。
+  運用(1)(2)は文章だけだったため、`core/deps.allow` + `lint:core-deps` で機械的に止める形にした
+- **「httpapi を使わない core 利用者」は現れた**(`platform/authz`)。分割を再検討したが、
+  `platform/authz` は `problem` 経由で huma を使うため、`httpapi` だけを別モジュールにしても huma は残る。
+  huma は応答形式の語彙として全利用者が持つ前提でよいので、**分割はしない**
+

@@ -8,10 +8,16 @@ import (
 	"time"
 )
 
-// Bus はイベントの配送先（SNS 等）。実装は core/eventbus。
+// Bus はイベントの配送先への送信口。配送基盤（SNS / EventBridge 等）には依存しない。
+// 実装は core の外のモジュール（eventbus/snssqs。ADR 0022）で、各サービスの合成ルートが選ぶ。
 type Bus interface {
 	Publish(ctx context.Context, event Event) error
 }
+
+// Handler は受信イベントの処理。配送基盤には依存しない（受信側の実装が呼ぶ）。
+// nil を返すと受領（配送基盤から消す）、エラーを返すと再配信に任せる（at-least-once）。
+// 重複は受信側の inbox が弾く前提。
+type Handler func(ctx context.Context, ev Event) error
 
 // Relay は outbox の未送信イベントをポーリングして Bus へ送る常駐処理（internal-03 §2.3）。
 // 停止・失敗しても未送信レコードが DB に残るだけなので、再開すれば回復する（check #8）。

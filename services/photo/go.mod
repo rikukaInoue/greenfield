@@ -17,6 +17,7 @@ require (
 	github.com/open-feature/go-sdk v1.19.0
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.7.0
 	github.com/rikukaInoue/greenfield/core v0.0.0
+	github.com/rikukaInoue/greenfield/eventbus/snssqs v0.0.0
 	github.com/rikukaInoue/greenfield/flagprovider/appconfig v0.0.0-00010101000000-000000000000
 	github.com/rikukaInoue/greenfield/telemetry v0.0.0-00010101000000-000000000000
 )
@@ -105,3 +106,5 @@ replace github.com/rikukaInoue/greenfield/flagprovider/appconfig => ../../flagpr
 replace github.com/rikukaInoue/greenfield/telemetry => ../../telemetry
 
 replace github.com/rikukaInoue/greenfield/services/gear-client => ../gear-client
+
+replace github.com/rikukaInoue/greenfield/eventbus/snssqs => ../../eventbus/snssqs

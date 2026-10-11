@@ -1,9 +1,14 @@
-// Package eventbus は SNS FIFO（トピック）/ SQS FIFO（購読キュー）によるイベント配送。
-// 送り手は Relay 経由で SNSBus.Publish を呼び、受け手は Consume で SQS をポーリングする
-// （internal-03 §2.3。1トピック → 受け手サービスごとのキューへファンアウト）。
+// Package snssqs は consistency.Bus / consistency.Handler の SNS FIFO（トピック）/
+// SQS FIFO（購読キュー）実装。送り手は Relay 経由で SNSBus.Publish を呼び、受け手は
+// Consumer で SQS をポーリングする（internal-03 §2.3。1トピック → 受け手サービスごとの
+// キューへファンアウト）。
+//
+// core には置かない（ADR 0022）。差し込み口（consistency.Bus / Handler）は core、
+// 配送基盤の実装はこのモジュール。EventBridge 等へ替えるときは別の実装モジュールを足し、
+// 各サービスの合成ルート（app/relay.go・app/consume.go）だけを差し替える。
 //
 // ローカル・CI は LocalStack を同じ SDK で使う（AWS_ENDPOINT_URL で切替、実機再演は 7.3）。
-package eventbus
+package snssqs
 
 import (
 	"context"
@@ -48,7 +53,7 @@ func NewSNSBus(client *sns.Client, topicARN string) *SNSBus {
 func (b *SNSBus) Publish(ctx context.Context, ev consistency.Event) error {
 	body, err := json.Marshal(envelope{ID: ev.ID, Type: ev.Type, AggregateID: ev.AggregateID, Payload: ev.Payload})
 	if err != nil {
-		return fmt.Errorf("eventbus: encode: %w", err)
+		return fmt.Errorf("snssqs: encode: %w", err)
 	}
 	dedup := ev.ID
 	if ev.DedupID != "" {
@@ -61,22 +66,19 @@ func (b *SNSBus) Publish(ctx context.Context, ev consistency.Event) error {
 		MessageDeduplicationId: aws.String(dedup),
 	})
 	if err != nil {
-		return fmt.Errorf("eventbus: publish %s: %w", ev.ID, err)
+		return fmt.Errorf("snssqs: publish %s: %w", ev.ID, err)
 	}
 	return nil
 }
-
-// Handler は受信イベントの処理。nil を返すとメッセージを削除する。
-// エラーを返すと削除せず、可視性タイムアウト後に再配信される（at-least-once）。
-type Handler func(ctx context.Context, ev consistency.Event) error
 
 // Consumer は SQS FIFO キューをポーリングして Handler を呼ぶ。
 type Consumer struct {
 	client   *sqs.Client
 	queueURL string
 
-	// Handler は受信イベントの処理。必須。
-	Handler Handler
+	// Handler は受信イベントの処理。必須。nil を返すとメッセージを削除し、
+	// エラーを返すと削除せず可視性タイムアウト後の再配信に任せる。
+	Handler consistency.Handler
 	// WaitSeconds はロングポーリングの待ち時間。
 	WaitSeconds int32
 	// DrainTimeout は停止時に受信済みメッセージの処理を完走させる上限。ゼロなら 20 秒(10.8)。
@@ -84,7 +86,7 @@ type Consumer struct {
 }
 
 // NewConsumer は queueURL を購読する Consumer を返す。
-func NewConsumer(client *sqs.Client, queueURL string, h Handler) *Consumer {
+func NewConsumer(client *sqs.Client, queueURL string, h consistency.Handler) *Consumer {
 	return &Consumer{client: client, queueURL: queueURL, Handler: h, WaitSeconds: 5}
 }
 

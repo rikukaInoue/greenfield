@@ -35,6 +35,8 @@ photo ──(イベント: PhotoPublished)──▶ gear             起きれ�
 .
 ├── go.work
 ├── core/                        # 差し込み口・consistency・httpclient（未実装 #138）・middleware（規約は conventions/ 準拠）
+├── eventbus/
+│   └── snssqs/                  # consistency.Bus / Handler の SNS・SQS 実装(core に置かない。docs/adr/0022)
 ├── platform/
 │   └── authz/                   # go.mod: check / batch-check / list-objects / tuples:write → OpenFGA
 ├── infra/                       # IaC（compose常駐ホスト、任意でECS/ALB。試作のため同居。realm定義は deploy/compose/keycloak/ 側）

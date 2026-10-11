@@ -16,6 +16,7 @@ updates:
     directories:
       - "/core"
       - "/dev"
+      - "/eventbus/snssqs"
       - "/flagprovider/appconfig"
       - "/platform/authz"
       - "/services/gear"

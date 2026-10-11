@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 
 	"github.com/rikukaInoue/greenfield/core/consistency"
-	"github.com/rikukaInoue/greenfield/core/eventbus"
+	"github.com/rikukaInoue/greenfield/eventbus/snssqs"
 )
 
 // RelayConfig は relay（outbox → SNS）の設定。
@@ -51,7 +51,7 @@ func newRelay(ctx context.Context, cfg RelayConfig) (*consistency.Relay, *sql.DB
 		db.Close()
 		return nil, nil, fmt.Errorf("aws config: %w", err)
 	}
-	bus := eventbus.NewSNSBus(sns.NewFromConfig(awsCfg), cfg.TopicARN)
+	bus := snssqs.NewSNSBus(sns.NewFromConfig(awsCfg), cfg.TopicARN)
 	return consistency.NewRelay(db, bus), db, nil
 }
 
