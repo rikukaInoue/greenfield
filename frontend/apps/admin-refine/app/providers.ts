@@ -50,8 +50,11 @@ export function createAuthProvider(currentPath: () => string): AuthProvider {
     logout: async () => ({ success: true, redirectTo: "/login" }),
     check: async () => ({ authenticated: true }), // 未ログインはサーバの middleware が /login へ飛ばす
     onError: async (error: HttpError & { code?: string }) => {
+      // ステップアップはここで遷移させない。進行中の操作(resume_* の query)を戻り先に載せられるのは
+      // 操作を知っている画面側だけで、ここが currentPath() で遷移すると query の無い戻り先と
+      // 競合して勝った方が残る(実測: /accounts?resume_subject= が /accounts に化けた)
       if (error?.statusCode === 401 && error.code === "auth.step_up_required") {
-        return { redirectTo: stepUpLogin(currentPath()), logout: false };
+        return { logout: false };
       }
       if (error?.statusCode === 401) {
         return { redirectTo: `/login?${new URLSearchParams({ returnTo: currentPath() })}`, logout: false };

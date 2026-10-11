@@ -5,6 +5,8 @@ export default [
   route("logout", "routes/logout.ts"),
   layout("routes/authed.tsx", [
     index("routes/photos.tsx"),
+    route("accounts", "routes/accounts.tsx"),
+    route("gear", "routes/gear.tsx"),
     // BFF: refine の dataProvider はブラウザで動くので、admin API を直接叩かせずここを叩かせる。
     // サーバ側がセッションのトークンで代理呼び出しする（トークンはブラウザに出ない）
     route("resources/admin/photos", "routes/resources.admin.photos.ts"),

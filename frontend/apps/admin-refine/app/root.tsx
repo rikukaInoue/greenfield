@@ -1,13 +1,15 @@
 import { Refine } from "@refinedev/core";
 import routerProvider from "@refinedev/react-router";
-import { Form, isRouteErrorResponse, Link, Links, Meta, Outlet, Scripts, ScrollRestoration, useLocation, useRouteLoaderData } from "react-router";
+import { CameraIcon, ImageIcon, UsersIcon } from "lucide-react";
+import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration, useLocation, useRouteLoaderData } from "react-router";
 
 import type { Route } from "./+types/root";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { AdminHeader } from "~/components/admin-header";
+import { Sidebar } from "~/components/refine-ui/layout/sidebar";
 import { Toaster } from "~/components/refine-ui/notification/toaster";
 import { useNotificationProvider } from "~/components/refine-ui/notification/use-notification-provider";
 import { ThemeProvider } from "~/components/refine-ui/theme/theme-provider";
+import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import { requestIdContext, viewerContext } from "./context";
 import { createAuthProvider, dataProvider } from "./providers";
 import { securityHeaders } from "./.server/security";
@@ -56,11 +58,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// メニューは resources から導出される(レジストリの Sidebar が useMenu を使う)。
+// 項目を足す = ここに1エントリ足す + ルートを1本足す。
+const resources = [
+  { name: "photos", list: "/", meta: { label: "写真", icon: <ImageIcon /> } },
+  { name: "accounts", list: "/accounts", meta: { label: "アカウント", icon: <UsersIcon /> } },
+  // gear の admin API は未実装。項目が増えるときの形だけ見せる(ページは準備中)
+  { name: "gear", list: "/gear", meta: { label: "機材", icon: <CameraIcon /> } },
+];
+
 export default function App() {
   const root = useRouteLoaderData<typeof loader>("root");
-  const viewer = root?.viewer;
+  const viewer = root?.viewer ?? null;
   const location = useLocation();
   const currentPath = () => location.pathname + location.search;
+  const shell = Boolean(viewer); // ログイン前はサイドバー無し
   return (
     <ThemeProvider defaultTheme="light" storageKey="gf-admin-theme">
       <Refine
@@ -68,30 +80,29 @@ export default function App() {
         authProvider={createAuthProvider(currentPath)}
         routerProvider={routerProvider}
         notificationProvider={useNotificationProvider}
-        resources={[{ name: "photos", list: "/", meta: { label: "全ユーザーの写真" } }]}
-        options={{ syncWithLocation: true, warnWhenUnsavedChanges: false, disableTelemetry: true }}
+        resources={resources}
+        options={{
+          syncWithLocation: true,
+          warnWhenUnsavedChanges: false,
+          disableTelemetry: true,
+          title: { text: "greenfield admin", icon: <ImageIcon className="size-4" /> },
+        }}
       >
-        <header className="border-b">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-            <Link to="/" className="font-semibold tracking-tight">
-              greenfield admin
-            </Link>
-            {viewer && (
-              <div className="flex items-center gap-3 text-sm">
-                <span>{viewer.subject}</span>
-                <Badge variant={viewer.aal >= 2 ? "default" : "secondary"}>AAL{viewer.aal}</Badge>
-                <Form method="post" action="/logout">
-                  <Button type="submit" variant="ghost" size="sm">
-                    ログアウト
-                  </Button>
-                </Form>
-              </div>
-            )}
-          </div>
-        </header>
-        <main className="mx-auto max-w-5xl px-4 py-6">
-          <Outlet />
-        </main>
+        {shell ? (
+          <SidebarProvider>
+            <Sidebar />
+            <SidebarInset>
+              <AdminHeader viewer={viewer} />
+              <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+                <Outlet />
+              </main>
+            </SidebarInset>
+          </SidebarProvider>
+        ) : (
+          <main className="mx-auto w-full max-w-5xl px-4 py-6">
+            <Outlet />
+          </main>
+        )}
         <Toaster />
       </Refine>
     </ThemeProvider>
