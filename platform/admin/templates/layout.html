@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{template "title" .}} — greenfield admin</title>
+<title>{{template "title" .Body}} — greenfield admin</title>
 <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
@@ -12,8 +12,16 @@
   {{with .Viewer}}<span class="who">{{.Subject}} <span class="badge">AAL{{.AAL}}</span></span>
   <form method="post" action="/logout"><button class="link" type="submit">ログアウト</button></form>{{end}}
 </header>
+<div class="shell">
+{{if .Viewer}}<nav class="sidebar" aria-label="メニュー">
+<ul>
+{{range .Nav}}{{if .Disabled}}<li class="disabled"><span>{{.Label}}</span><small>準備中</small></li>
+{{else}}<li{{if eq .Key $.Active}} class="active" aria-current="page"{{end}}><a href="{{.Href}}">{{.Label}}</a></li>
+{{end}}{{end}}</ul>
+</nav>{{end}}
 <main>
-{{template "content" .}}
+{{template "content" .Body}}
 </main>
+</div>
 </body>
 </html>{{end}}

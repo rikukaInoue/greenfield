@@ -97,7 +97,7 @@ func parsePages() (map[string]*template.Template, error) {
 		return nil, err
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "photos", "confirm", "result"} {
+	for _, name := range []string{"login", "photos", "accounts", "confirm", "result"} {
 		t, err := layout.Clone()
 		if err != nil {
 			return nil, err
@@ -130,6 +130,8 @@ func (s *Server) Handler() http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Get("/", s.listPhotos)
+		r.Get("/accounts", s.accountsForm)
+		r.Get("/accounts/go", s.accountsGo)
 		r.Get("/accounts/{subject}/delete", s.confirmDelete)
 		r.With(sameSiteOnly).Post("/accounts/{subject}:delete", s.deleteAccount)
 	})
@@ -201,7 +203,6 @@ func bearer(sess *Session) adminapi.RequestEditorFn {
 // ---- ログイン ----
 
 type loginPage struct {
-	Viewer   *Session
 	Subject  string
 	AAL      int
 	ReturnTo string
@@ -218,7 +219,7 @@ func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
 			p.Subject = sess.Subject
 		}
 	}
-	s.render(w, http.StatusOK, "login", p)
+	s.render(w, http.StatusOK, "login", nil, "", p)
 }
 
 // login は開発用ログイン。subject と AAL から devtoken を mint してサーバ側セッションに置く。
@@ -233,7 +234,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	aal, _ := strconv.Atoi(r.PostForm.Get("aal"))
 	returnTo := safeReturnTo(r.PostForm.Get("returnTo"))
 	if subject == "" || (aal != 1 && aal != 2) {
-		s.render(w, http.StatusBadRequest, "login", loginPage{ReturnTo: returnTo, AAL: 1, Error: "subject と保証レベルを入力してください"})
+		s.render(w, http.StatusBadRequest, "login", nil, "", loginPage{ReturnTo: returnTo, AAL: 1, Error: "subject と保証レベルを入力してください"})
 		return
 	}
 	// 既存セッションは破棄して作り直す（ステップアップは「同じ人が高い AAL で入り直す」なので
@@ -276,7 +277,6 @@ func safeReturnTo(v string) string {
 // ---- 写真一覧 ----
 
 type photosPage struct {
-	Viewer  *Session
 	OwnerID string
 	Limit   int
 	Photos  []adminapi.AdminPhoto
@@ -286,7 +286,7 @@ type photosPage struct {
 func (s *Server) listPhotos(w http.ResponseWriter, r *http.Request) {
 	sess := sessionOf(r)
 	q := r.URL.Query()
-	p := photosPage{Viewer: sess, OwnerID: strings.TrimSpace(q.Get("owner_id")), Limit: 50}
+	p := photosPage{OwnerID: strings.TrimSpace(q.Get("owner_id")), Limit: 50}
 	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n >= 1 && n <= 200 {
 		p.Limit = n
 	}
@@ -305,7 +305,7 @@ func (s *Server) listPhotos(w http.ResponseWriter, r *http.Request) {
 		if res.JSON200 != nil && res.JSON200.Photos != nil {
 			p.Photos = *res.JSON200.Photos
 		}
-		s.render(w, http.StatusOK, "photos", p)
+		s.render(w, http.StatusOK, "photos", sess, "photos", p)
 	case http.StatusUnauthorized:
 		// トークンが API に拒まれた。セッションごと捨ててログインへ
 		s.expireSession(w, r)
@@ -319,16 +319,34 @@ func (s *Server) listPhotos(w http.ResponseWriter, r *http.Request) {
 // ---- アカウント削除 ----
 
 type confirmPage struct {
-	Viewer  *Session
 	Subject string
 }
 
 func (s *Server) confirmDelete(w http.ResponseWriter, r *http.Request) {
-	s.render(w, http.StatusOK, "confirm", confirmPage{Viewer: sessionOf(r), Subject: chi.URLParam(r, "subject")})
+	s.render(w, http.StatusOK, "confirm", sessionOf(r), "accounts", confirmPage{Subject: chi.URLParam(r, "subject")})
+}
+
+type accountsPage struct {
+	Subject string
+	Error   string
+}
+
+// accountsForm は subject を入力して削除へ進むだけの画面。写真一覧の行からも同じ確認画面に入る。
+func (s *Server) accountsForm(w http.ResponseWriter, r *http.Request) {
+	s.render(w, http.StatusOK, "accounts", sessionOf(r), "accounts", accountsPage{})
+}
+
+// accountsGo はフォームの subject を確認画面の URL に変換する（GET のまま。状態は変えない）。
+func (s *Server) accountsGo(w http.ResponseWriter, r *http.Request) {
+	subject := strings.TrimSpace(r.URL.Query().Get("subject"))
+	if subject == "" || strings.ContainsAny(subject, "/\\?#") {
+		s.render(w, http.StatusBadRequest, "accounts", sessionOf(r), "accounts", accountsPage{Subject: subject, Error: "subject を入力してください（/ や ? は使えません）"})
+		return
+	}
+	http.Redirect(w, r, "/accounts/"+url.PathEscape(subject)+"/delete", http.StatusSeeOther)
 }
 
 type resultPage struct {
-	Viewer  *Session
 	Title   string
 	Message string
 	OK      bool
@@ -349,7 +367,7 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
 			n = int(res.JSON200.DeletedPhotos)
 		}
 		logger.FromContext(r.Context()).Info("admin account deleted", "target", subject, "operator", sess.Subject, "deleted_photos", n)
-		s.render(w, http.StatusOK, "result", resultPage{Viewer: sess, OK: true, Title: "削除しました",
+		s.render(w, http.StatusOK, "result", sess, "accounts", resultPage{OK: true, Title: "削除しました",
 			Message: fmt.Sprintf("%s のアカウントを削除しました（写真 %d 件）", subject, n)})
 	case http.StatusUnauthorized:
 		if isStepUpChallenge(res.HTTPResponse) {
@@ -379,16 +397,18 @@ func isStepUpChallenge(res *http.Response) bool {
 
 // ---- 描画 ----
 
-func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
+// render はページ本体をレイアウト（ヘッダ・サイドバー・現在地）で包んで描く。
+// viewer が nil のページ（ログイン）ではサイドバーを出さない。
+func (s *Server) render(w http.ResponseWriter, status int, name string, viewer *Session, active string, body any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := s.pages[page].ExecuteTemplate(w, "layout", data); err != nil {
-		slog.Error("admin: template", "page", page, "err", err)
+	if err := s.pages[name].ExecuteTemplate(w, "layout", newPage(viewer, active, body)); err != nil {
+		slog.Error("admin: template", "page", name, "err", err)
 	}
 }
 
 func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int, message string) {
-	s.render(w, status, "result", resultPage{Viewer: sessionOf(r), Title: http.StatusText(status), Message: message})
+	s.render(w, status, "result", sessionOf(r), "", resultPage{Title: http.StatusText(status), Message: message})
 }
 
 // expireSession はトークンが API に拒まれたときの後始末。セッションを消してログインへ。
