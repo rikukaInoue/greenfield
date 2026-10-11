@@ -1,0 +1,13 @@
+import { redirect } from "react-router";
+import type { Route } from "./+types/logout";
+import { sessionStorage } from "../.server/session";
+
+// 状態を変えるのは POST だけ（Lax Cookie はトップレベル GET を通すため。web と同じ判断）
+export async function action({ request }: Route.ActionArgs) {
+  const session = await sessionStorage.getSession(request.headers.get("Cookie"));
+  return redirect("/login", { headers: { "Set-Cookie": await sessionStorage.destroySession(session) } });
+}
+
+export function loader() {
+  return redirect("/");
+}

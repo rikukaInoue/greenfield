@@ -1,0 +1,12 @@
+.DS_Store
+.env
+/node_modules/
+
+# React Router
+/.react-router/
+/build/
+/test-results/
+/playwright-report/
+
+# サーバー側セッションストア（トークンを含む。コミットしない）
+/.data/
