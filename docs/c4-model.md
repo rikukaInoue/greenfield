@@ -97,7 +97,7 @@ C4Container
   Rel(authz, fgadb, "", "MySQL")
   Rel(photo, photodb, "Atomic + outbox", "MySQL")
   Rel(gear, geardb, "inbox + 業務", "MySQL")
-  Rel(photo, s3, "署名付き URL を発行。本体はブラウザが直接置く", "S3 API")
+  Rel(photo, s3, "署名付き URL を発行。本体はブラウザが直接アップロードする", "S3 API")
   Rel(photo, topic, "relay が outbox を送る", "SNS Publish")
   Rel(topic, queue, "ファンアウト", "raw message delivery")
   Rel(queue, gear, "consumer がポーリング。inbox で重複排除", "SQS Receive")
@@ -113,7 +113,7 @@ C4Container
 - 各サービスは external / internal / admin の 3 リスナーを別ポートで持つ。本番では ALB の 3 責務（TLS 終端・ホスト名振り分け・到達制御）に対応し、アプリは Listen するポートしか知らない（internal-07）
 - サービス間の同期呼び出しは internal リスナーだけで、Keycloak の client_credentials による M2M トークンを `core/httpclient` が付ける。IAM ロールではつないでいないので、アカウントをまたいでも同じ仕組みで動く
 - 非同期の経路は outbox → relay → SNS → SQS → inbox で、at-least-once。重複は受信側の inbox が弾き、relay が止まっても未送信レコードは DB に残る（check #8）。配送基盤の実装は `eventbus/snssqs` にあり、core は差し込み口しか持たない（ADR 0022）
-- 画像の本体はアプリを通らない。photo が署名付き URL を発行し、ブラウザがストレージへ直接置く（ADR 0009）
+- 画像の本体はアプリを通らない。photo が署名付き URL を発行し、ブラウザがストレージへ直接アップロードする（ADR 0009）
 - フラグは定義を同期してプロセス内で評価する。評価のたびに外部を呼ばないので、flagd が落ちても最後の定義で動く（ADR 0013）
 - 観測は 3 本とも計装済みで、ログの trace_id とトレースの trace_id は同じ値（internal-06 §10.1）。compose の `obs` プロファイルで Grafana から相互に辿れる
 
