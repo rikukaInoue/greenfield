@@ -66,6 +66,8 @@ photo ──(イベント: PhotoPublished)──▶ gear             起きれ�
 
 ## 全体像
 
+C4 モデル（Context / Container / Component / Deployment）で段階的に見る図は `c4-model.md`。ここでは認証経路と同期・非同期の線だけを 1 枚にまとめる。
+
 ```mermaid
 flowchart TB
     B["ブラウザ（Cookieのみ）"] --> SSR["frontend/ SSR<br/>confidential client"]

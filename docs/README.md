@@ -25,6 +25,7 @@
 |---|---|
 | 01-scope.md | 目的・検証しないこと・成功条件・還流物 |
 | 02-architecture.md | リポジトリ構成・compose構成・全体像 |
+| c4-model.md | 全体構成の C4 モデル（Context / Container / Component / Deployment）。入口の図 |
 | 03-platform.md | 認可基盤（authz / OpenFGA）の構築仕様とKeycloak設定 |
 | 04-milestones.md | 検証チェックリスト（26項目） |
 | 05-roadmap.md | 段階検証ロードマップ（Phase 0〜6） |
