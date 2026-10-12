@@ -36,9 +36,9 @@ run() {
 }
 
 echo "1. 通るべき形"
-run 0 "既知の検出だけなら緑" "CVE-2026-0001 photo  # 到達不能をgovulncheckで確認 exp:${future} #999
+run 0 "既知の検出だけなら成功" "CVE-2026-0001 photo  # 到達不能をgovulncheckで確認 exp:${future} #999
 " "CVE-2026-0001 photo"
-run 0 "検出もbaselineも空なら緑" "" ""
+run 0 "検出もbaselineも空なら成功" "" ""
 run 0 "解消済みは警告どまり" "CVE-2026-0001 photo  # 対応待ち exp:${future} #999
 CVE-2026-0002 gear  # 対応待ち exp:${future} #999
 " "CVE-2026-0001 photo"
