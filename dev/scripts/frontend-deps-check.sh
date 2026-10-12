@@ -29,7 +29,7 @@ if [ "$osv_exit" -gt 1 ]; then
   tail -5 "$osv_err" >&2
   exit 1
 fi
-# 空振りガード: 走査したパッケージ数を必ず確かめる（lockfile を見失って0件緑を防ぐ）
+# 空振りガード: 走査したパッケージ数を必ず確かめる（lockfile を見失って0件の成功を防ぐ）
 scanned=$(grep -oE 'found [0-9]+ packages' "$osv_err" | grep -oE '[0-9]+' | head -1)
 if [ -z "${scanned:-}" ] || [ "$scanned" -eq 0 ]; then
   echo "osv-scanner が0パッケージしか走査していない。検査が空振りしている" >&2

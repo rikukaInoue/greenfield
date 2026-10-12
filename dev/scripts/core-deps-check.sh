@@ -5,7 +5,7 @@
 # 足す PR には対応する ADR 番号を書く」と定めたが、文章だけの運用だったため、#162 で
 # AWS SDK(SNS / SQS)が ADR も表の更新も無いまま core に入った。core/eventbus を使うのは
 # photo / gear だけなのに、platform/authz まで AWS SDK を依存グラフに抱えていた
-# (#270 で eventbus/snssqs へ移した)。文章だけの禁止は 1 行で静かに破られるので、機械で止める。
+# (#270 で eventbus/snssqs へ移した)。文章だけの禁止は 1 行の違反が検知されないので、機械で止める。
 #
 # 検査は3点:
 #   1. core/go.mod の direct require はすべて許可リストにある

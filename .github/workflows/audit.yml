@@ -1,5 +1,5 @@
 # 検査の検査(#226)。「ずっと成功し続けている検査」を四半期に一度、機械で疑う。
-# 落ちたら issue を起票する(黙って赤いまま放置される scheduled run にしない)。
+# 落ちたら issue を起票する(黙って失敗したまま放置される scheduled run にしない)。
 name: audit
 on:
   schedule:

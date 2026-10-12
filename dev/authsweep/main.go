@@ -135,7 +135,7 @@ func run() error {
 	gear.params = map[string]string{"id": itemID, "gear_item_id": itemID, "key": marker + "-nonexistent"}
 
 	// --- 陽性対照: 検査系自体が全拒否に壊れていないことを先に確かめる ---
-	// これが無いと「サーバーが全部 404 を返す壊れ方」でも検査が緑になる
+	// これが無いと「サーバーが全部 404 を返す壊れ方」でも検査が成功になる
 	fmt.Println("2. 陽性対照（alice 自身は見える）")
 	// fresh=true: 作成直後は認可判定の反映に窓がある（API 契約にある鮮度指定を使う）
 	if st, body := do(http.MethodGet, photo.bases[httpapi.External]+"/v2/photos/"+photoID+"?fresh=true", alice); st != 200 {
@@ -176,7 +176,7 @@ func run() error {
 		}
 	}
 	// 経路数のフェイルオープン防止。photo 8 + gear 5 の現状に対し、半分を割ったら
-	// 列挙自体を疑う（ルータ差し替えなどで Routes() が痩せても黙って緑にしない）
+	// 列挙自体を疑う（ルータ差し替えなどで Routes() が痩せても黙って成功にしない）
 	if swept < 8 {
 		return fmt.Errorf("検査した経路が %d 件しかない。列挙が壊れている", swept)
 	}
