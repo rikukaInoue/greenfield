@@ -20,7 +20,7 @@ import が解決してしまう。つまり**ワークスペースモードの�
 - 境界の検証を含む検査は `GOWORK=off` で各モジュール単体（`mise run build` / `vet` / `test`）
 - CI は後者を使う
 
-モジュール間の結線は `require v0.0.0` + `replace ../..`。タグを打たない規約下で `GOWORK=off` ビルドを
+モジュール間の依存は `require v0.0.0` + `replace ../..` で解決する。タグを打たない規約下で `GOWORK=off` ビルドを
 成立させる手段がこれしかない。副作用として、境界違反（`-client` 以外への replace）が go.mod の差分として
 PR レビューに現れる。
 
