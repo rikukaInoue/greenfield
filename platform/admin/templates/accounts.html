@@ -1,0 +1,10 @@
+{{define "title"}}アカウント{{end}}
+{{define "content"}}
+<h2>アカウント</h2>
+<p>subject を指定してアカウント削除へ進みます。写真一覧の行からも同じ画面に入れます。</p>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<form method="get" action="/accounts/go" class="filters">
+  <label>subject <input name="subject" value="{{.Subject}}" required placeholder="例: alice"></label>
+  <button type="submit">削除へ進む</button>
+</form>
+{{end}}

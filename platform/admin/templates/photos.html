@@ -1,0 +1,25 @@
+{{define "title"}}写真一覧{{end}}
+{{define "content"}}
+<h2>全ユーザーの写真</h2>
+<form method="get" action="/" class="filters">
+  <label>owner_id <input name="owner_id" value="{{.OwnerID}}" placeholder="（全員）"></label>
+  <label>件数 <input name="limit" type="number" min="1" max="200" value="{{.Limit}}"></label>
+  <button type="submit">絞り込む</button>
+</form>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<table>
+<thead><tr><th>ID</th><th>owner</th><th>caption</th><th>visibility</th><th>status</th><th>created</th><th></th></tr></thead>
+<tbody>
+{{range .Photos}}<tr>
+  <td class="num">{{.Id}}</td>
+  <td><code>{{.OwnerId}}</code></td>
+  <td class="caption">{{.Caption}}</td>
+  <td><span class="badge">{{.Visibility}}</span></td>
+  <td><span class="badge">{{.Status}}</span></td>
+  <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+  <td class="nowrap"><a href="/accounts/{{.OwnerId}}/delete">アカウント削除…</a></td>
+</tr>{{else}}<tr><td colspan="7">該当なし</td></tr>{{end}}
+</tbody>
+</table>
+<p><small>{{len .Photos}} 件</small></p>
+{{end}}

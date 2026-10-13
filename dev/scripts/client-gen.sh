@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # api/<service>/internal.openapi.json から services/<service>-client/client.gen.go を oapi-codegen で生成する。
+# admin.openapi.json に経路があれば services/<service>-client/admin/client.gen.go も生成する(#277)。
 #
 #   dev/scripts/client-gen.sh          # 生成して書き込む
 #   dev/scripts/client-gen.sh --check  # 生成物がスペックと一致しなければ失敗する（CI）
@@ -29,11 +30,27 @@ for s in $services; do
   (cd "$root/dev" && GOWORK=off go tool oapi-codegen -generate types,client -package "$pkg" "$spec") > "$tmp/$name.gen.go"
   if [ "$mode" = --check ]; then
     cmp -s "$tmp/$name.gen.go" "$client/client.gen.go" || stale+=("services/$name-client/client.gen.go")
-    continue
+  else
+    cp "$tmp/$name.gen.go" "$client/client.gen.go"
+    echo "wrote services/$name-client/client.gen.go"
   fi
-  cp "$tmp/$name.gen.go" "$client/client.gen.go"
-  (cd "$client" && GOWORK=off go mod tidy)
-  echo "wrote services/$name-client/client.gen.go"
+
+  # admin リスナーのクライアント(#277)。管理画面(platform/admin)が operator 本人のトークンで
+  # 代理呼び出しするための生成物。経路を持つ admin スペックがあるサービスだけ生成する
+  # (gear の admin は経路が無く、空のクライアントを置く意味が無い)。
+  # パッケージは services/<name>-client/admin(package admin)。internal 側と同じく手書き禁止
+  admin_spec="$root/api/$name/admin.openapi.json"
+  if [ -f "$admin_spec" ] && python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('paths') else 1)" "$admin_spec"; then
+    (cd "$root/dev" && GOWORK=off go tool oapi-codegen -generate types,client -package admin "$admin_spec") > "$tmp/$name.admin.gen.go"
+    if [ "$mode" = --check ]; then
+      cmp -s "$tmp/$name.admin.gen.go" "$client/admin/client.gen.go" || stale+=("services/$name-client/admin/client.gen.go")
+    else
+      mkdir -p "$client/admin"
+      cp "$tmp/$name.admin.gen.go" "$client/admin/client.gen.go"
+      echo "wrote services/$name-client/admin/client.gen.go"
+    fi
+  fi
+  [ "$mode" = --check ] || (cd "$client" && GOWORK=off go mod tidy)
 done
 
 if [ ${#stale[@]} -gt 0 ]; then

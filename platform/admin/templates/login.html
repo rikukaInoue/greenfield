@@ -1,0 +1,18 @@
+{{define "title"}}ログイン{{end}}
+{{define "content"}}
+<h2>ログイン</h2>
+{{if .StepUp}}<p class="notice">この操作には再認証（AAL2）が必要です。AAL2 でログインし直すと元の画面に戻ります。</p>{{end}}
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<form method="post" action="/login" class="filters">
+  <label>subject <input name="subject" value="{{.Subject}}" required autocomplete="username"></label>
+  <label>保証レベル
+    <select name="aal">
+      <option value="1" {{if ne .AAL 2}}selected{{end}}>AAL1（通常ログイン）</option>
+      <option value="2" {{if eq .AAL 2}}selected{{end}}>AAL2（ステップアップ済み）</option>
+    </select>
+  </label>
+  <input type="hidden" name="returnTo" value="{{.ReturnTo}}">
+  <button type="submit">ログイン（開発用）</button>
+</form>
+<p><small>開発用ログイン: 署名検証のない擬似トークン（devtoken）をサーバ側セッションに保存します。トークンはブラウザに渡りません。</small></p>
+{{end}}
