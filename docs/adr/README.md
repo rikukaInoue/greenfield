@@ -43,3 +43,4 @@
 | [0020](0020-migration-tool-comparison.md) | マイグレーションツール比較: golang-migrate と goose（草案） | 要 |
 | [0021](0021-diff-driven-scanning.md) | 継続的検査は差分運用にする（baseline 固定・理由と期限必須・fail-open にしない） | 要 |
 | [0022](0022-delivery-implementations-outside-core.md) | 配送基盤の実装は core に置かない(差し込み口だけ core。core の依存は許可リストで止める) | 要 |
+| [0023](0023-composition-root-layers.md) | 合成ルートをプロセスとモジュールの 2 段に分け、DI ライブラリはまだ入れない | 要 |
