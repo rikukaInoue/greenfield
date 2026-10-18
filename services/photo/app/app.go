@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,26 +17,17 @@ import (
 
 	"github.com/XSAM/otelsql"
 	"github.com/rikukaInoue/greenfield/core/authz"
-	"github.com/rikukaInoue/greenfield/core/authz/authzhttp"
-	"github.com/rikukaInoue/greenfield/core/authz/devtoken"
 	"github.com/rikukaInoue/greenfield/core/authz/localauthz"
-	"github.com/rikukaInoue/greenfield/core/authz/oidcauthn"
-	"github.com/rikukaInoue/greenfield/core/authz/simpleassurance"
-	"github.com/rikukaInoue/greenfield/core/authz/staticauthn"
 	"github.com/rikukaInoue/greenfield/core/consistency"
 	"github.com/rikukaInoue/greenfield/core/flags"
 	"github.com/rikukaInoue/greenfield/core/httpapi"
-	"github.com/rikukaInoue/greenfield/core/httpclient"
 	"github.com/rikukaInoue/greenfield/core/runtimeenv"
 	"github.com/rikukaInoue/greenfield/services/photo/blobstore"
 	"github.com/rikukaInoue/greenfield/services/photo/flagsource"
-	"github.com/rikukaInoue/greenfield/services/photo/gearlink"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/admin"
 	externalv2 "github.com/rikukaInoue/greenfield/services/photo/handler/external/v2"
 	"github.com/rikukaInoue/greenfield/services/photo/handler/internalapi"
 	"github.com/rikukaInoue/greenfield/services/photo/migrations"
-	"github.com/rikukaInoue/greenfield/services/photo/readmodel"
-	"github.com/rikukaInoue/greenfield/services/photo/repository"
 	"github.com/rikukaInoue/greenfield/services/photo/usecase"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -157,92 +147,15 @@ func (d *Deps) Close() error {
 
 // LocalDeps はローカル開発・CI用の実装を組み立てる。
 func LocalDeps(ctx context.Context, cfg Config) (*Deps, error) {
-	authn, err := staticauthn.New()
-	if err != nil {
-		return nil, err
-	}
-	authzDB, err := openDB(cfg.LocalAuthzDSN)
-	if err != nil {
-		return nil, fmt.Errorf("localauthz store: %w", err)
-	}
-	store := localauthz.New(authzDB, actionRelations)
-
-	db, err := openDB(cfg.DSN)
-	if err != nil {
-		return nil, fmt.Errorf("photo db: %w", err)
-	}
-	images, err := blobstore.NewS3Store(ctx, cfg.Images)
-	if err != nil {
-		return nil, err
-	}
-	if err := flagsource.Register(ctx, "photo", cfg.Flags); err != nil {
-		// フラグ基盤に繋がらなくても起動は続ける。評価は宣言した既定値へ倒れる
-		slog.Warn("フラグ基盤に接続できないので既定値で動く", "config", cfg.Flags, "err", err)
-	}
-	// dev ループでは gear も staticauthn なので、devtoken の M2M（svc-photo、
-	// scope internal:gear）で紐付けコマンドを送る（gear→photo の逆向きと同じ流儀）
-	gearToken := httpclient.StaticTokenSource(devtoken.Mint(devtoken.Claims{
-		Subject: "svc-photo", ClientID: "svc-photo", Service: true,
-		Scopes: []string{"internal:gear"},
-	}))
-	gear, err := gearlink.New(cfg.GearInternalURL, httpclient.Client(gearToken))
-	if err != nil {
-		return nil, fmt.Errorf("gearlink: %w", err)
-	}
-	return &Deps{
-		Authenticator: authn,
-		Assurance:     simpleassurance.New(),
-		Flags:         flags.NewEvaluator("photo", flagSet),
-		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, gear, usecase.EnvFaults{}),
-		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
-		DB:      db,
-		closers: []func() error{db.Close, authzDB.Close},
-	}, nil
+	return buildWithFx(ctx, cfg, localModule)
 }
 
 // OIDCDeps は本番アダプタ（oidcauthn + authzhttp）で組み立てる。
 // LocalDeps との違いは認証と認可の2依存だけで、usecase / handler には触れない
 // （差し替えの影響が配線部に閉じることが internal-04 §7 の主張。check #18）。
+// 組み立ての中身は providers.go と module.go にあり、fx が起動時に解決する。
 func OIDCDeps(ctx context.Context, cfg Config) (*Deps, error) {
-	authn, err := oidcauthn.New(ctx, cfg.OIDCIssuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidcauthn: %w", err)
-	}
-	if cfg.M2M.TokenURL == "" || cfg.M2M.ClientSecret == "" {
-		return nil, fmt.Errorf("authz を呼ぶ M2M 資格情報が未設定（M2M_TOKEN_URL / M2M_CLIENT_SECRET）")
-	}
-	ts := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, cfg.M2M.Scopes...)
-	store := authzhttp.New(cfg.AuthzURL, httpclient.Client(ts))
-
-	db, err := openDB(cfg.DSN)
-	if err != nil {
-		return nil, fmt.Errorf("photo db: %w", err)
-	}
-	images, err := blobstore.NewS3Store(ctx, cfg.Images)
-	if err != nil {
-		return nil, err
-	}
-	if err := flagsource.Register(ctx, "photo", cfg.Flags); err != nil {
-		slog.Warn("フラグ基盤に接続できないので既定値で動く", "config", cfg.Flags, "err", err)
-	}
-	// gear internal は internal:gear スコープを要求する。authz 用（internal:platform）とは
-	// トークンを分ける——1トークンに全スコープを盛ると、漏れたときの被害が全内部APIに広がる
-	gearTS := httpclient.NewTokenSource(cfg.M2M.TokenURL, cfg.M2M.ClientID, cfg.M2M.ClientSecret, "internal:gear")
-	gear, err := gearlink.New(cfg.GearInternalURL, httpclient.Client(gearTS))
-	if err != nil {
-		return nil, fmt.Errorf("gearlink: %w", err)
-	}
-	return &Deps{
-		Authenticator: authn,
-		Assurance:     simpleassurance.New(),
-		Flags:         flags.NewEvaluator("photo", flagSet),
-		Commands: usecase.NewPhotoCommands(
-			consistency.NewAtomic(db), repository.NewPhotoRepository(db), images, store, store, outboxEventual{}, gear, usecase.EnvFaults{}),
-		Queries: usecase.NewPhotoQueries(readmodel.NewPhotoReader(db), images, store, store),
-		DB:      db,
-		closers: []func() error{db.Close},
-	}, nil
+	return buildWithFx(ctx, cfg, oidcModule)
 }
 
 // outboxEventual は usecase.Eventual を core/consistency の Outbox で満たすアダプタ。
