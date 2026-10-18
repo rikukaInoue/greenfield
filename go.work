@@ -5,6 +5,7 @@ use (
 	./dev
 	./eventbus/snssqs
 	./flagprovider/appconfig
+	./platform/admin
 	./platform/authz
 	./services/gear
 	./services/gear-client

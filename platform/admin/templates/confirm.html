@@ -1,0 +1,10 @@
+{{define "title"}}アカウント削除の確認{{end}}
+{{define "content"}}
+<h2>アカウント削除</h2>
+<p class="error"><strong>取り消せない操作です。</strong> <code>{{.Subject}}</code> のアカウントと、その全投稿を削除します。</p>
+<p>この操作は AAL2（ステップアップ済み）の operator だけが実行できます。足りなければ再認証に誘導されます。</p>
+<form method="post" action="/accounts/{{.Subject}}:delete" class="actions">
+  <button type="submit" class="danger">削除を実行する</button>
+  <a href="/">戻る</a>
+</form>
+{{end}}

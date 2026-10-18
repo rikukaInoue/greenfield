@@ -1,0 +1,35 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+header { display: flex; align-items: center; gap: 1rem; padding: .75rem 1.25rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); }
+header h1 { font-size: 1rem; margin: 0; }
+header h1 a { color: inherit; text-decoration: none; }
+header .who { margin-left: auto; font-size: .9rem; opacity: .8; }
+header form { display: inline; }
+.shell { display: flex; min-height: calc(100vh - 3.2rem); }
+.sidebar { width: 13rem; flex: none; padding: 1rem 0; border-right: 1px solid color-mix(in srgb, CanvasText 15%, transparent); background: color-mix(in srgb, CanvasText 3%, Canvas); }
+.sidebar ul { list-style: none; margin: 0; padding: 0; }
+.sidebar li a, .sidebar li span { display: block; padding: .55rem 1.25rem; color: inherit; text-decoration: none; }
+.sidebar li a:hover { background: color-mix(in srgb, CanvasText 7%, transparent); }
+.sidebar li.active a { background: color-mix(in srgb, LinkText 14%, transparent); font-weight: 600; border-left: 3px solid LinkText; padding-left: calc(1.25rem - 3px); }
+.sidebar li.disabled { opacity: .5; }
+.sidebar li.disabled small { display: block; padding: 0 1.25rem .5rem; font-size: .7rem; }
+main { flex: 1; min-width: 0; max-width: 64rem; padding: 1.25rem 2rem; }
+h2 { font-size: 1.2rem; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent); }
+th { font-weight: 600; opacity: .8; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.nowrap, th.nowrap { white-space: nowrap; }
+td.caption { max-width: 28rem; overflow-wrap: anywhere; }
+.filters { display: flex; gap: .75rem; align-items: end; margin: 1rem 0; flex-wrap: wrap; }
+label { display: grid; gap: .25rem; font-size: .85rem; }
+input, select { padding: .4rem .5rem; font: inherit; border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); border-radius: 4px; background: Field; color: FieldText; }
+button { padding: .45rem .9rem; font: inherit; border-radius: 4px; border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); background: ButtonFace; color: ButtonText; cursor: pointer; }
+button.danger { background: #b3261e; color: #fff; border-color: #b3261e; }
+button.link { background: none; border: none; color: LinkText; text-decoration: underline; padding: 0; }
+.notice { padding: .75rem 1rem; border-radius: 6px; margin: 1rem 0; background: color-mix(in srgb, #f6c343 25%, transparent); }
+.error { padding: .75rem 1rem; border-radius: 6px; margin: 1rem 0; background: color-mix(in srgb, #b3261e 18%, transparent); }
+.ok { padding: .75rem 1rem; border-radius: 6px; margin: 1rem 0; background: color-mix(in srgb, #2e7d32 20%, transparent); }
+.badge { display: inline-block; padding: 0 .4rem; border-radius: 999px; font-size: .75rem; background: color-mix(in srgb, CanvasText 10%, transparent); }
+code { font-size: .9em; }
+.actions { display: flex; gap: .75rem; align-items: center; margin-top: 1rem; }

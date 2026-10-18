@@ -1,0 +1,6 @@
+{{define "title"}}{{.Title}}{{end}}
+{{define "content"}}
+<h2>{{.Title}}</h2>
+{{if .OK}}<p class="ok">{{.Message}}</p>{{else}}<p class="error">{{.Message}}</p>{{end}}
+<p><a href="/">一覧へ戻る</a></p>
+{{end}}
