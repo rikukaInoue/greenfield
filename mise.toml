@@ -1,6 +1,6 @@
 # ツールのバージョン固定とタスク定義。`mise install` で揃え、`mise run` でタスク一覧から選べる。
 [tools]
-go = "1.26.9"
+go = "1.26.10"
 sqlc = "1.31.1"
 "golangci-lint" = "2.14.0"
 "ubi:oasdiff/oasdiff" = "1.32.1"

@@ -1,3 +1,4 @@
 # osv-scanner(frontend) の既知検出（#183 / ADR 0021）。
 # 書式: <脆弱性ID> <パッケージ名>  # 理由 exp:YYYY-MM-DD #issue
 # 理由・期限の無い行は baseline-diff.sh が受理しない。2026-09-30 時点で検出0件。
+GHSA-g3hv-75wg-m249 minimatch  # 開発依存(openapi-typescript→@redocly/openapi-core)のみ。修正は11系で上流未対応。web:genはリポジトリ内のOpenAPIしか読まない exp:2027-01-31 #304
