@@ -409,6 +409,14 @@ depends = ["web:install"]
 dir = "frontend"
 run = "pnpm --filter @greenfield/web test:e2e"
 
+[tasks."wt:new"]
+description = "worktree を分離して作る(ポート・node_modules・DB): mise run wt:new <name> [<ref>]"
+run = "dev/wt/new.sh"
+
+[tasks."wt:rm"]
+description = "wt:new で作った worktree を片付ける: mise run wt:rm <name> [--force]"
+run = "dev/wt/rm.sh"
+
 [tasks.scaffold]
 description = "新サービスの骨格を生成: mise run scaffold <name>"
 run = "go run ./dev/scaffold new-service"

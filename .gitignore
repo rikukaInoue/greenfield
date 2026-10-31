@@ -13,3 +13,6 @@ deploy/compose/caddy/drill/
 
 # mise run allinone:obs が書く Tier 1 のログ(Alloy が Loki へ送る。#271)
 .logs/
+
+# dev/wt/new.sh が書く worktree 固有の設定(#302)
+mise.local.toml

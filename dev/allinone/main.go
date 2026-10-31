@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/rikukaInoue/greenfield/core/logger"
@@ -24,7 +25,8 @@ func main() {
 
 	errc := make(chan error, len(services))
 	for _, s := range services {
-		slog.Info("starting", "service", s.Name, "external", s.Base, "internal", s.Base+1, "admin", s.Base+2)
+		ext, intl, adm := addrs(s.Base)
+		slog.Info("starting", "service", s.Name, "external", ext, "internal", intl, "admin", adm)
 		go func() { errc <- s.run(ctx) }()
 	}
 
@@ -41,6 +43,25 @@ func main() {
 	}
 }
 
+// addrs は external / internal / admin のアドレスを返す。base は services.go の割当表の値で、
+// GREENFIELD_PORT_OFFSET があればそれを足す(worktree ごとにポートの番号帯を分けるため。#302)。
+// 割当表そのものは変えないので、scaffold が採番する +10 の規則はそのまま使える。
 func addrs(base int) (external, internal, admin string) {
+	base += portOffset()
 	return fmt.Sprintf(":%d", base), fmt.Sprintf(":%d", base+1), fmt.Sprintf(":%d", base+2)
+}
+
+// portOffset は GREENFIELD_PORT_OFFSET を読む。未設定は 0(メインの checkout)。
+// 数として読めない値は、黙って 0 にすると別の worktree のポートと衝突するので起動を止める。
+func portOffset() int {
+	v := os.Getenv("GREENFIELD_PORT_OFFSET")
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		slog.Error("GREENFIELD_PORT_OFFSET は 0 以上の整数", "value", v)
+		os.Exit(2)
+	}
+	return n
 }

@@ -55,3 +55,20 @@ mise run web:dev             # frontend/ の SSR（http://localhost:5173、/logi
 mise run web:gen             # api/ の OpenAPI から TS の型を再生成
 mise run web:check           # 生成型の一致 + typecheck + build（CI）
 ```
+
+### worktree を並行で使う
+
+複数のブランチ(人やエージェントごと)を同時に動かすときは、worktree ごとにポート・`node_modules`・DB を分ける。
+
+```
+mise run wt:new feat-x       # ../greenfield.feat-x を作る
+cd ../greenfield.feat-x
+mise run run                 # ポートは番号帯ぶんずれる(例: photo :38280、gear :38290)
+mise run wt:rm feat-x        # worktree・DB ブランチ・番号帯を返す(git のブランチは残す)
+```
+
+- ポート: `30000 + 番号帯 × 200` を足す(`GREENFIELD_PORT_OFFSET`)。番号帯はロックを取って決める
+- `node_modules`: メインの checkout から APFS の clonefile(`cp -c`)で複製する
+- DB: [sashiki](https://github.com/rikukadev/sashiki) のブランチ。サービスごとの DB ユーザーと GRANT ごと分かれる。sashiki のプロキシはサービスごとのユーザーを通さないので、ブランチの mysqld に直接つなぐ
+- worktree ごとの値は `mise.local.toml`(mise が自動で読む。git 管理外)に書く
+- まだ分けていないもの: LocalStack の SNS/SQS、RustFS のバケット、OpenFGA の store(#302 の段階 2・3)。同時に動かすとイベントを取り合う
