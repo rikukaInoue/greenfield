@@ -29,7 +29,7 @@ jobs:
       - name: 対象の絞り込み
         if: ${{ inputs.service != 'all' && inputs.service != matrix.service }}
         run: echo "skip=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.skip != '1'
       - uses: sigstore/cosign-installer@v3
         if: env.skip != '1'
@@ -65,7 +65,7 @@ jobs:
           cosign attest --yes --new-bundle-format=true --type spdxjson --predicate sbom.spdx.json "${{ steps.build.outputs.digest }}"
       - name: ビルド provenance(GitHub attestation)
         if: env.skip != '1'
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.build.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest_sha }}
